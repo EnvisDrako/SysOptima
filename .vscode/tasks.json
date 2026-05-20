@@ -1,0 +1,21 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build SysOptima Sensor (Debug)",
+            "type": "shell",
+            "command": "MSBuild.exe SysOptima_Sensor/SysOptima_Sensor/SysOptima_Sensor.slnx /t:Build /p:Configuration=Debug /p:Platform=x64",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Build SysOptima Sensor (Release)",
+            "type": "shell",
+            "command": "MSBuild.exe SysOptima_Sensor/SysOptima_Sensor/SysOptima_Sensor.slnx /t:Build /p:Configuration=Release /p:Platform=x64",
+            "problemMatcher": "$msCompile"
+        }
+    ]
+}

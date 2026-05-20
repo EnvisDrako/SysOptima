@@ -81,6 +81,3 @@ x86/
 # NuGet local packages restored by Visual Studio
 packages/
 *.nupkg
-
-# Large local notes/artifacts
-Great questions.docx
