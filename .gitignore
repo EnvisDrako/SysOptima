@@ -81,3 +81,13 @@ x86/
 # NuGet local packages restored by Visual Studio
 packages/
 *.nupkg
+
+# Local reference docs & interactive guides (Not tracked on GitHub)
+Docs/
+EDR_Sentinel_Architecture.html
+CPP_INTERVIEW_DEFENSE.md
+RUNBOOK.md
+PRODUCTION_READINESS_ROADMAP.md
+SysOptima_Interview_Guide.html
+system_evaluation_report.md
+
