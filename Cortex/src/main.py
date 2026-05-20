@@ -1014,12 +1014,12 @@ def main():
 if __name__ == "__main__":
     try:
         exit_code = main()
-        sys.exit(exit_code)
+        os._exit(exit_code)
     except KeyboardInterrupt:
-        print("\n[*] Interrupted by user")
-        sys.exit(0)
+        print("\n[*] Interrupted by user. Shutting down cleanly...")
+        os._exit(0)
     except Exception as e:
         print(f"\n[✗] FATAL ERROR: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        os._exit(1)
