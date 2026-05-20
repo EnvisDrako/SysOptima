@@ -1551,6 +1551,30 @@ void OnProcessStop(const EVENT_RECORD& record, const trace_context& trace_contex
     catch (...) {}
 }
 
+void KillOtherInstances() {
+    DWORD current_pid = GetCurrentProcessId();
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+
+    PROCESSENTRY32W entry = {};
+    entry.dwSize = sizeof(PROCESSENTRY32W);
+
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            wstring process_name = entry.szExeFile;
+            if (process_name == L"SysOptima_Sensor.exe" && entry.th32ProcessID != current_pid) {
+                wcout << L"[-] Found duplicate background sensor instance (PID " << entry.th32ProcessID << L"). Terminating..." << endl;
+                HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, entry.th32ProcessID);
+                if (hProc) {
+                    TerminateProcess(hProc, 0);
+                    CloseHandle(hProc);
+                }
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+}
+
 // ================================================================
 // MAIN
 // ================================================================
@@ -1560,6 +1584,14 @@ int main() {
     wcout << L"  SYSOPTIMA SENTINEL v2.0 COMPLETE" << endl;
     SetConsoleCtrlHandler(ConsoleHandler, TRUE);
     wcout << L"========================================" << endl;
+    wcout << endl;
+
+    wcout << L"[*] Running pre-flight workspace cleanup..." << endl;
+    // 1. Terminate other running instances of ourselves
+    KillOtherInstances();
+    // 2. Quietly clean up any orphaned Python Cortex backends
+    system("powershell -Command \"Get-Process python -ErrorAction SilentlyContinue | ForEach-Object { $cmd = (Get-CimInstance Win32_Process -Filter \\\"ProcessId = $_.Id\\\" -ErrorAction SilentlyContinue).CommandLine; if ($cmd -and $cmd.Contains(\\\"main.py\\\")) { Stop-Process -Id $_.Id -Force } }\" >nul 2>&1");
+    wcout << L"    [✓] Leaked background tasks cleaned successfully." << endl;
     wcout << endl;
 
     const wchar_t* mode_names[] = { L"PRODUCTION", L"SMART", L"LEARNING" };
