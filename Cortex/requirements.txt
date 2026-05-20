@@ -1,0 +1,39 @@
+# SysOptima Cortex Requirements
+# Install with: pip install -r requirements.txt
+
+# Core Dependencies
+networkx>=2.8
+matplotlib>=3.5
+numpy>=1.21
+scikit-learn>=1.0
+joblib>=1.1
+pywin32>=304
+
+# Phase 1: Database
+# (No additional dependencies - using stdlib sqlite3)
+
+# Active Web Dashboard
+flask>=3.0
+flask-socketio>=5.3
+eventlet>=0.35
+
+# Phase 4: Threat Intelligence
+requests>=2.31
+schedule>=1.2
+
+# Legacy Dash dashboard dependencies
+# dashboard_old.py is not part of the active startup path.
+# dash>=2.14
+# plotly>=5.18
+# pandas>=1.5
+
+# Phase 5: Enhanced AI (Optional - for Autoencoder/LSTM)
+# tensorflow>=2.15  # Uncomment if implementing deep learning models
+
+# Phase 6: Reporting (Optional)
+# reportlab>=4.0  # Uncomment for PDF generation
+jinja2>=3.1  # HTML templates
+
+# Development Tools (Optional)
+# pytest>=7.4  # For testing
+# black>=23.0  # Code formatting

@@ -1,0 +1,86 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments and local env
+.env
+.venv/
+venv/
+env/
+
+# Test and tooling cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime data, models, and logs
+*.log
+logs/
+data/
+models/
+*.pkl
+sysoptima_events.db
+sysoptima_events.db-*
+sysoptima_models.pkl
+sysoptima_baseline.pkl
+
+# Local generated outputs
+threats.json
+threats.csv
+test_dashboard.db
+threat_intel_hashes.json
+threat_intel_ips.json
+
+# SysOptima runtime folders
+SysOptima_Quarantine/
+SysOptima_Sandbox/
+Cortex/src/__pycache__/
+
+# Windows and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.VC.db
+*.VC.VC.opendb
+*.db-shm
+*.db-wal
+ipch/
+
+# C++ build outputs
+[Bb]in/
+[Oo]bj/
+x64/
+x86/
+[Dd]ebug/
+[Rr]elease/
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.recipe
+*.tlog
+*.lastbuildstate
+*.ifc
+*.ifc.*
+*.module.json
+*.dt.*
+
+# NuGet local packages restored by Visual Studio
+packages/
+*.nupkg
+
+# Large local notes/artifacts
+Great questions.docx

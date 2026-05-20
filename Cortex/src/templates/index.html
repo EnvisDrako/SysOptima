@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SysOptima Sentinel - Enterprise EDR Threat Console</title>
+    
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <!-- Cytoscape.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body class="dark-theme">
+    
+    <!-- Header -->
+    <header class="dashboard-header">
+        <div class="logo">
+            <h1>⚡ SysOptima Sentinel <span class="enterprise-tag">ENTERPRISE EDR</span></h1>
+        </div>
+        
+        <!-- Header Navigation Tabs -->
+        <div class="header-tabs">
+            <button class="tab-btn active" id="tab-btn-threat-map" onclick="switchConsoleTab('threat-map')">🕸️ Threat Map</button>
+            <button class="tab-btn" id="tab-btn-task-manager" onclick="switchConsoleTab('task-manager')">📋 Task Manager</button>
+            <button class="tab-btn" id="tab-btn-quarantine-vault" onclick="switchConsoleTab('quarantine-vault')">📦 Quarantine Vault</button>
+            <button class="tab-btn" id="tab-btn-detonation-lab" onclick="switchConsoleTab('detonation-lab')">🧪 Detonation Lab</button>
+        </div>
+        
+        <div class="status-bar">
+            <span class="status-indicator active" id="connection-status">● CONNECTED</span>
+            <span class="mode-indicator" id="mode-display">MODE: SMART</span>
+            <span class="ai-indicator" id="ai-status">AI: NOT TRAINED</span>
+        </div>
+    </header>
+    
+    <!-- Main Tab Containers -->
+    <div class="dashboard-container">
+        
+        <!-- TAB 1: THREAT MAP -->
+        <div id="tab-content-threat-map" class="console-tab-content active">
+            <div class="threat-map-layout">
+                <!-- Left Panel: Graph View -->
+                <div class="panel panel-graph">
+                    <div class="panel-header">
+                        <h2>🕸️ Active Behavior Threat Graph</h2>
+                        
+                        <!-- Toolbar for Search and Layout Controls -->
+                        <div class="graph-toolbar">
+                            <div class="search-box">
+                                🔍 <input type="text" id="node-search" placeholder="Search Process (PID, Name, Tag)..." onkeyup="filterGraphNodes()">
+                            </div>
+                            <div class="layout-control">
+                                Layout: 
+                                <select id="select-layout" onchange="changeGraphLayout()">
+                                    <option value="cose">Force-Directed (Cose)</option>
+                                    <option value="breadthfirst">Hierarchical Tree</option>
+                                    <option value="concentric">Concentric Rings</option>
+                                    <option value="grid">Structured Grid</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="graph-controls">
+                            <button id="btn-freeze" title="Freeze graph (F)">❄️</button>
+                            <button id="btn-reset-zoom" title="Reset zoom">🔍</button>
+                            <button id="btn-filter-threats" title="Show threats only">🎯</button>
+                        </div>
+                    </div>
+                    <div id="graph-container"></div>
+                    <div class="graph-legend">
+                        <span class="legend-item"><span class="color-safe">●</span> Safe</span>
+                        <span class="legend-item"><span class="color-suspicious">▲</span> Suspicious</span>
+                        <span class="legend-item"><span class="color-critical">⬢</span> Critical</span>
+                        <span class="legend-item"><span class="color-ai">◆</span> AI Anomaly</span>
+                    </div>
+                </div>
+                
+                <!-- Right Panel: Side Stats -->
+                <div class="panel panel-sidebar">
+                    <!-- Stats Card -->
+                    <div class="card stats-card">
+                        <h3>📊 Statistics</h3>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Total Processes</span>
+                                <span class="stat-value" id="stat-total">0</span>
+                            </div>
+                            <div class="stat-item safe">
+                                <span class="stat-label">Safe</span>
+                                <span class="stat-value" id="stat-safe">0</span>
+                            </div>
+                            <div class="stat-item suspicious">
+                                <span class="stat-label">Suspicious</span>
+                                <span class="stat-value" id="stat-suspicious">0</span>
+                            </div>
+                            <div class="stat-item critical">
+                                <span class="stat-label">Critical</span>
+                                <span class="stat-value" id="stat-critical">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Unsigned</span>
+                                <span class="stat-value" id="stat-unsigned">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">AI Anomalies</span>
+                                <span class="stat-value" id="stat-ai">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Status Card -->
+                    <div class="card ai-card">
+                        <h3>🤖 AI Behavior Observer</h3>
+                        <div id="ai-details">
+                            <div class="ai-status">Not Trained</div>
+                            <div class="ai-progress">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="ai-progress-fill" style="width: 0%"></div>
+                                </div>
+                                <div class="progress-text" id="ai-progress-text">0 / 1000 samples</div>
+                            </div>
+                            <button id="btn-ai-train" class="btn btn-primary">Start Training</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Pending Reviews Card -->
+                    <div class="card reviews-card">
+                        <h3>⚠️ Pending Reviews</h3>
+                        <div id="reviews-list" class="reviews-list">
+                            <div class="empty-state">No pending reviews</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Suspended Processes Card -->
+                    <div class="card suspended-card">
+                        <h3>⏸️ Suspended</h3>
+                        <div id="suspended-list" class="suspended-list">
+                            <div class="empty-state">No suspended processes</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TAB 2: TASK MANAGER -->
+        <div id="tab-content-task-manager" class="console-tab-content">
+            <div class="panel panel-table">
+                <div class="panel-header">
+                    <h2>📋 Current Active Tasks & Activity History</h2>
+                    <div class="table-controls">
+                        <input type="text" id="task-search" placeholder="Filter processes..." onkeyup="filterTaskTable()">
+                        <button class="btn btn-primary" onclick="loadTaskGrid()">🔄 Refresh Grid</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="grid-table" id="task-grid-table">
+                        <thead>
+                            <tr>
+                                <th>PID</th>
+                                <th>Process Name</th>
+                                <th>Verdict</th>
+                                <th>Trust Score</th>
+                                <th>Signed</th>
+                                <th>Origin</th>
+                                <th>Full Executable Path</th>
+                                <th>Mitigations</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Loaded via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TAB 3: QUARANTINE VAULT -->
+        <div id="tab-content-quarantine-vault" class="console-tab-content">
+            <div class="panel panel-table">
+                <div class="panel-header">
+                    <h2>📦 Secure Quarantine & Filesystem Vault</h2>
+                    <div class="table-controls">
+                        <button class="btn btn-primary" onclick="loadQuarantineGrid()">🔄 Refresh Vault</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="grid-table" id="quarantine-grid-table">
+                        <thead>
+                            <tr>
+                                <th>Quarantine ID</th>
+                                <th>Original Filename</th>
+                                <th>Original Path</th>
+                                <th>Reason</th>
+                                <th>Size</th>
+                                <th>Isolate Time</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Loaded via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TAB 4: DETONATION LAB -->
+        <div id="tab-content-detonation-lab" class="console-tab-content">
+            <div class="detonation-lab-layout">
+                <div class="panel panel-detonation-form">
+                    <div class="panel-header">
+                        <h2>🧪 Detonate Malware Sample</h2>
+                    </div>
+                    <div class="detonation-form">
+                        <div class="form-group">
+                            <label>Sample Executable Path (Host File System):</label>
+                            <input type="text" id="sandbox-sample-path" placeholder="e.g. D:\SysOptima\malware_samples\sample.exe">
+                        </div>
+                        <div class="form-group-row">
+                            <div class="form-group">
+                                <label>Execution Timeout (seconds):</label>
+                                <input type="number" id="sandbox-timeout" value="10" min="2" max="60">
+                            </div>
+                            <div class="form-group">
+                                <label>Containment Mode:</label>
+                                <select id="sandbox-isolation">
+                                    <option value="sandbox">Native Hyper-V Windows Sandbox (Strict WSB)</option>
+                                    <option value="local">Local Detonation (Windows Firewall Outbound Block)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button class="btn btn-danger btn-explode" onclick="launchSandboxSample()">💥 Explode Sample in Isolation</button>
+                    </div>
+                </div>
+                
+                <div class="panel panel-detonation-list">
+                    <div class="panel-header">
+                        <h2>📋 Sandbox Execution History</h2>
+                        <button class="btn btn-secondary" onclick="loadDetonationGrid()">🔄 Refresh</button>
+                    </div>
+                    <div class="table-container">
+                        <table class="grid-table" id="detonation-grid-table">
+                            <thead>
+                                <tr>
+                                    <th>Execution ID</th>
+                                    <th>Sample</th>
+                                    <th>Status</th>
+                                    <th>Duration</th>
+                                    <th>Verdict Findings</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Loaded via AJAX -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+    <!-- Detail Modal with Tabs -->
+    <div id="detail-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Process Details</h2>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            
+            <!-- Modal navigation tabs -->
+            <div class="modal-tabs">
+                <button class="modal-tab-btn active" id="modal-tab-btn-overview" onclick="switchModalTab('overview')">📋 Overview</button>
+                <button class="modal-tab-btn" id="modal-tab-btn-files" onclick="switchModalTab('files')">📂 Files (<span id="modal-badge-files">0</span>)</button>
+                <button class="modal-tab-btn" id="modal-tab-btn-network" onclick="switchModalTab('network')">🌐 Connections (<span id="modal-badge-network">0</span>)</button>
+                <button class="modal-tab-btn" id="modal-tab-btn-registry" onclick="switchModalTab('registry')">🔑 Registry (<span id="modal-badge-registry">0</span>)</button>
+                <button class="modal-tab-btn" id="modal-tab-btn-timeline" onclick="switchModalTab('timeline')">⏱️ Event Timeline</button>
+            </div>
+            
+            <div class="modal-body">
+                
+                <!-- Modal Tab 1: Overview -->
+                <div id="modal-content-overview" class="modal-tab-content-pane active">
+                    <div class="detail-section">
+                        <h3>📋 Core Process Metadata</h3>
+                        <table class="detail-table">
+                            <tr><td>PID:</td><td id="detail-pid">-</td></tr>
+                            <tr><td>Name:</td><td id="detail-name">-</td></tr>
+                            <tr><td>Path:</td><td id="detail-path">-</td></tr>
+                            <tr><td>Threat Level:</td><td id="detail-threat">-</td></tr>
+                            <tr><td>Trust Score:</td><td id="detail-trust">-</td></tr>
+                            <tr><td>Signed:</td><td id="detail-signed">-</td></tr>
+                            <tr><td>Origin:</td><td id="detail-origin">-</td></tr>
+                        </table>
+                    </div>
+                    <div class="detail-section">
+                        <h3>🏷️ Heuristic Tags & Flags</h3>
+                        <div id="detail-tags" class="tags-container"></div>
+                    </div>
+                </div>
+                
+                <!-- Modal Tab 2: Files -->
+                <div id="modal-content-files" class="modal-tab-content-pane">
+                    <div class="detail-section">
+                        <h3>📂 File System Modifications (Ingested)</h3>
+                        <ul id="detail-files" class="forensic-list">
+                            <!-- Loaded via JS -->
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Modal Tab 3: Network -->
+                <div id="modal-content-network" class="modal-tab-content-pane">
+                    <div class="detail-section">
+                        <h3>🌐 Established Network Sockets</h3>
+                        <ul id="detail-network" class="forensic-list">
+                            <!-- Loaded via JS -->
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Modal Tab 4: Registry -->
+                <div id="modal-content-registry" class="modal-tab-content-pane">
+                    <div class="detail-section">
+                        <h3>🔑 Registry Transactions</h3>
+                        <ul id="detail-registry" class="forensic-list">
+                            <!-- Loaded via JS -->
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Modal Tab 5: Timeline -->
+                <div id="modal-content-timeline" class="modal-tab-content-pane">
+                    <div class="detail-section">
+                        <h3>⏱️ Chronological Process Timeline</h3>
+                        <div id="detail-timeline" class="timeline-container"></div>
+                    </div>
+                </div>
+                
+            </div>
+            <div class="modal-footer">
+                <!-- Advanced Mitigations -->
+                <button class="btn btn-warning" id="btn-isolate-network" onclick="toggleNetworkIsolation()" style="margin-right: auto;">🔒 Isolate Network</button>
+                <button class="btn btn-secondary" onclick="dumpProcessMemory()">💾 Win32 Memory Dump</button>
+                
+                <!-- Standard Actions -->
+                <button class="btn btn-danger" onclick="killProcess()">🔪 Kill</button>
+                <button class="btn btn-warning" onclick="killTree()">🌲 Kill Tree</button>
+                <button class="btn btn-info" onclick="suspendProcess()">⏸️ Suspend</button>
+                <button class="btn btn-success" onclick="whitelistProcess()">✅ Whitelist</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- JavaScript -->
+    <script src="/static/js/dashboard.js"></script>
+    
+</body>
+</html>

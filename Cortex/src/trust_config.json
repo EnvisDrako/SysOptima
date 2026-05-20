@@ -1,0 +1,33 @@
+{
+  "trusted_signers": {
+    "Microsoft Corporation": 50,
+    "Google LLC": 50,
+    "Apple Inc.": 50,
+    "Adobe Inc.": 40,
+    "Mozilla Corporation": 40,
+    "NVIDIA Corporation": 40
+  },
+  "trusted_paths": [
+    "C:\\Windows\\System32\\",
+    "C:\\Windows\\SysWOW64\\",
+    "C:\\Program Files\\",
+    "C:\\Program Files (x86)\\"
+  ],
+  "suspicious_paths": [
+    "\\AppData\\Local\\Temp\\",
+    "\\Downloads\\",
+    "\\Users\\Public\\",
+    "\\ProgramData\\"
+  ],
+  "system_processes": [
+    "svchost.exe",
+    "lsass.exe",
+    "csrss.exe",
+    "services.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "smss.exe"
+  ],
+  "user_whitelist_hashes": [],
+  "user_blacklist_hashes": []
+}

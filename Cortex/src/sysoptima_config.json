@@ -1,0 +1,113 @@
+{
+  "version": "2.0",
+  "mode": "SMART",
+  "detection": {
+    "threat_kill_threshold": 80,
+    "threat_suspend_threshold": 40,
+    "threat_monitor_threshold": 0,
+    "memory_scan_enabled": true,
+    "memory_scan_interval_ms": 10000,
+    "network_scan_interval_ms": 5000,
+    "aggregation_flush_ms": 100,
+    "reorder_buffer_ms": 500,
+    "max_events_per_pid_per_second": 10,
+    "max_graph_nodes": 500,
+    "node_fade_time_ms": 600000
+  },
+  "response": {
+    "auto_kill_enabled": true,
+    "auto_suspend_enabled": true,
+    "require_confirmation_for_trusted": true,
+    "suspend_auto_kill_timer_seconds": 60,
+    "quarantine_path": "C:\\Users\\yacoo\\AppData\\Local\\Temp\\SysOptima_Quarantine_Test_ML_1779283130",
+    "cleanup_persistence": true,
+    "network_isolation_enabled": false
+  },
+  "quarantine": {
+    "max_file_size_mb": 100,
+    "retention_days": 30,
+    "auto_cleanup_enabled": true
+  },
+  "malware_launcher": {
+    "enabled": true,
+    "sandbox_path": "C:\\Users\\yacoo\\AppData\\Local\\Temp\\SysOptima_Sandbox_Test_1779283130",
+    "execution_timeout_seconds": 10,
+    "max_concurrent": 3,
+    "auto_label_enabled": true,
+    "vm_integration_enabled": false
+  },
+  "ui": {
+    "dashboard_port": 8050,
+    "update_interval_ms": 2000,
+    "show_safe_processes": false,
+    "auto_collapse_system": true,
+    "theme": "dark",
+    "max_threat_log_entries": 20
+  },
+  "trust": {
+    "enable_signature_validation": true,
+    "enable_path_validation": true,
+    "enable_system_process_validation": true,
+    "skip_memory_scan_for_trusted": true,
+    "trust_threshold_skip_scan": 40,
+    "trusted_signers": {
+      "Microsoft Corporation": 50,
+      "Google LLC": 50,
+      "Apple Inc.": 50,
+      "Adobe Inc.": 40,
+      "Mozilla Corporation": 40,
+      "NVIDIA Corporation": 40
+    },
+    "trusted_paths": [
+      "C:\\Windows\\System32\\",
+      "C:\\Windows\\SysWOW64\\",
+      "C:\\Program Files\\",
+      "C:\\Program Files (x86)\\"
+    ],
+    "suspicious_paths": [
+      "\\AppData\\Local\\Temp\\",
+      "\\Downloads\\",
+      "\\Users\\Public\\",
+      "\\ProgramData\\"
+    ],
+    "system_processes": [
+      "svchost.exe",
+      "lsass.exe",
+      "csrss.exe",
+      "services.exe",
+      "wininit.exe",
+      "winlogon.exe",
+      "smss.exe"
+    ],
+    "user_whitelist_hashes": [],
+    "user_blacklist_hashes": []
+  },
+  "ai": {
+    "enabled": false,
+    "training_mode": false,
+    "training_samples_required": 1000,
+    "anomaly_threshold": 0.7,
+    "model_path": "sysoptima_models.pkl",
+    "auto_retrain_days": 30,
+    "baseline_collection_mode": "auto"
+  },
+  "database": {
+    "path": "sysoptima_events.db",
+    "retention_days": 7,
+    "auto_cleanup_enabled": true,
+    "vacuum_on_startup": false
+  },
+  "threat_intel": {
+    "enabled": false,
+    "auto_update_enabled": false,
+    "update_interval_hours": 24,
+    "abuseipdb_api_key": "",
+    "malwarebazaar_enabled": true
+  },
+  "logging": {
+    "console_level": "INFO",
+    "file_logging_enabled": false,
+    "log_file_path": "sysoptima.log",
+    "log_max_size_mb": 100
+  }
+}
