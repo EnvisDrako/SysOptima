@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="SysOptima_Sensor/SysOptima_Sensor.vcxproj" Id="ef11722b-bf4a-4718-a75f-5fe99b999291" />
+  <Project Path="SysOptima_Sensor\SysOptima_Sensor.vcxproj" Id="ef11722b-bf4a-4718-a75f-5fe99b999291" />
 </Solution>
