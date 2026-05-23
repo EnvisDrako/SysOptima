@@ -756,20 +756,45 @@ class ThreatGraph:
             print(f"[GRAPH] Exported to {filepath}")
     
     def GetProcess(self, pid):
-        """Get process node data by PID"""
+        """Get process node data by PID with full structural graph relationship fields"""
         with self.lock:
             node = self.active_pids.get(pid)
             if not node:
                 node = self._find_latest_node_by_pid(pid)
             if node:
+                # Find all neighbors/successors in the graph to populate relationships
+                files_modified = []
+                registry_keys = []
+                network_destinations = []
+                children_pids = []
+                
+                for succ in self.G.successors(node):
+                    node_type = self.G.nodes[succ].get('node_type')
+                    if node_type == 'file':
+                        files_modified.append(self.G.nodes[succ].get('full_path', succ))
+                    elif node_type == 'registry':
+                        registry_keys.append(self.G.nodes[succ].get('label', succ))
+                    elif node_type == 'network':
+                        network_destinations.append(self.G.nodes[succ].get('label', succ))
+                    elif node_type == 'process':
+                        children_pids.append(self.G.nodes[succ].get('pid'))
+
                 return {
                     'pid': pid,
                     'name': self.G.nodes[node].get('label', 'unknown'),
                     'full_path': self.G.nodes[node].get('full_path', ''),
                     'threat_level': self.G.nodes[node].get('threat', 0),
+                    'threat': self.G.nodes[node].get('threat', 0),  # Support both keys
                     'trust_score': self.G.nodes[node].get('trust_score', 0),
                     'tags': self.G.nodes[node].get('tags', []),
                     'is_signed': self.G.nodes[node].get('is_signed', True),
+                    'origin': self.G.nodes[node].get('origin', 'unknown'),
+                    'mitre': self.G.nodes[node].get('mitre', []),
+                    'ai_anomaly': self.G.nodes[node].get('ai_anomaly', False),
+                    'files_modified': files_modified,
+                    'registry_keys': registry_keys,
+                    'network_destinations': network_destinations,
+                    'children_pids': children_pids
                 }
             return None
 

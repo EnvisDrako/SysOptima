@@ -139,20 +139,20 @@ def get_process_details(pid):
     
     return jsonify({
         'pid': pid,
-        'name': proc.name,
-        'full_path': proc.full_path,
-        'threat_level': proc.threat,
-        'trust_score': proc.trust_score,
-        'is_signed': proc.is_signed,
-        'origin': proc.origin,
-        'tags': list(proc.tags),
-        'mitre': proc.mitre,
-        'ai_anomaly': proc.ai_anomaly,
+        'name': proc.get('name', 'unknown'),
+        'full_path': proc.get('full_path', ''),
+        'threat_level': proc.get('threat_level', 0),
+        'trust_score': proc.get('trust_score', 0),
+        'is_signed': proc.get('is_signed', True),
+        'origin': proc.get('origin', 'unknown'),
+        'tags': list(proc.get('tags', [])),
+        'mitre': proc.get('mitre', []),
+        'ai_anomaly': proc.get('ai_anomaly', False),
         'timeline': timeline,
-        'files_modified': proc.files_modified,
-        'registry_keys': proc.registry_keys,
-        'network_connections': proc.network_destinations,
-        'children': proc.children_pids
+        'files_modified': proc.get('files_modified', []),
+        'registry_keys': proc.get('registry_keys', []),
+        'network_connections': proc.get('network_destinations', []),
+        'children': proc.get('children_pids', [])
     })
 
 @app.route('/api/stats/summary')

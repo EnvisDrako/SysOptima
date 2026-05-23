@@ -23,18 +23,18 @@ def check_pipe(pipe_name):
             0,
             None
         )
-        print(f"  ✓ SUCCESS - Pipe exists and is accessible!")
+        print(f"  [PASS] Pipe exists and is accessible!")
         win32file.CloseHandle(handle)
         return True
     except pywintypes.error as e:
         error_code = e.winerror
         if error_code == 2:  # ERROR_FILE_NOT_FOUND
-            print(f"  ✗ FAILED - Pipe does not exist")
-            print(f"    → C++ Sentinel may not be running or pipes not created")
+            print(f"  [FAIL] Pipe does not exist")
+            print(f"    --> C++ Sentinel may not be running or pipes not created")
         elif error_code == 231:  # ERROR_PIPE_BUSY
-            print(f"  ✓ Pipe exists but is busy (already connected)")
+            print(f"  [PASS] Pipe exists but is busy (already connected)")
         else:
-            print(f"  ✗ FAILED - Error code: {error_code}")
+            print(f"  [FAIL] Error code: {error_code}")
             print(f"    Error: {e}")
         return False
 
@@ -55,10 +55,10 @@ def main():
         )
         
         if "SysOptima" in result.stdout:
-            print("\n✓ C++ Sentinel process is RUNNING")
+            print("\n[PASS] C++ Sentinel process is RUNNING")
             print(result.stdout)
         else:
-            print("\n✗ C++ Sentinel process NOT FOUND")
+            print("\n[FAIL] C++ Sentinel process NOT FOUND")
             print("\n  ACTION REQUIRED:")
             print("  1. Open PowerShell as Administrator")
             print("  2. Navigate to: d:\\SysOptima\\SysOptima_Sensor\\SysOptima_Sensor\\x64\\Release")
@@ -66,7 +66,7 @@ def main():
             print("\n  Then re-run this diagnostic.")
             return
     except Exception as e:
-        print(f"\n! Could not check for C++ process: {e}")
+        print(f"\n[INFO] Could not check for C++ process: {e}")
     
     # Check pipes
     data_ok = check_pipe(PIPE_DATA_NAME)
@@ -74,11 +74,11 @@ def main():
     
     print("\n" + "="*60)
     if data_ok and ctrl_ok:
-        print("  ✓ ALL CHECKS PASSED - Ready to connect!")
+        print("  [PASS] ALL CHECKS PASSED - Ready to connect!")
         print("="*60)
         print("\nYou can now run: python src/main.py")
     elif not data_ok or not ctrl_ok:
-        print("  ✗ CONNECTION NOT READY")
+        print("  [FAIL] CONNECTION NOT READY")
         print("="*60)
         print("\nDIAGNOSIS:")
         print("  C++ Sentinel is running but pipes are not created.")
