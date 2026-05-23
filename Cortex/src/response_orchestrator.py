@@ -4,6 +4,7 @@ Graduated response system: Monitor → Suspend → Kill based on threat + trust
 """
 
 import time
+import threading
 from typing import Dict, List
 
 from protocol import CMD_KILL_PID, CMD_SUSPEND_PID, CMD_KILL_TREE, pack_command
@@ -14,6 +15,7 @@ class ResponseOrchestrator:
     def __init__(self, command_queue, graph):
         self.command_queue = command_queue
         self.graph = graph
+        self.lock = threading.RLock()
         self.pending_reviews = []  # Processes awaiting user confirmation
         self.suspended_processes = {}  # PID -> suspend_time
         self.quarantine_manager = None  # Will be set by main.py
@@ -143,12 +145,13 @@ class ResponseOrchestrator:
             self._execute_suspend(pid, reason, name)
             
             if 'auto_kill_timer' in action:
-                self.suspended_processes[pid] = {
-                    'suspend_time': time.time(),
-                    'auto_kill_seconds': action['auto_kill_timer'],
-                    'name': name,
-                    'reason': reason
-                }
+                with self.lock:
+                    self.suspended_processes[pid] = {
+                        'suspend_time': time.time(),
+                        'auto_kill_seconds': action['auto_kill_timer'],
+                        'name': name,
+                        'reason': reason
+                    }
         
         elif action_type == 'KILL':
             self._execute_kill(pid, reason, name)
@@ -249,15 +252,16 @@ class ResponseOrchestrator:
     def _queue_for_review(self, pid: int, action: Dict, threat_level: int,
                          trust_score: int, name: str, full_path: str):
         """Add to pending review queue"""
-        self.pending_reviews.append({
-            'pid': pid,
-            'name': name,
-            'full_path': full_path,
-            'action': action,
-            'threat_level': threat_level,
-            'trust_score': trust_score,
-            'queued_time': time.time()
-        })
+        with self.lock:
+            self.pending_reviews.append({
+                'pid': pid,
+                'name': name,
+                'full_path': full_path,
+                'action': action,
+                'threat_level': threat_level,
+                'trust_score': trust_score,
+                'queued_time': time.time()
+            })
         print(f"[REVIEW NEEDED] {name} (PID {pid}) - {action['reason']}")
         print(f"                Threat: {threat_level}, Trust: {trust_score}")
     
@@ -266,43 +270,51 @@ class ResponseOrchestrator:
         now = time.time()
         to_kill = []
         
-        for pid, info in list(self.suspended_processes.items()):
-            elapsed = now - info['suspend_time']
-            if elapsed >= info['auto_kill_seconds']:
-                to_kill.append(pid)
+        with self.lock:
+            for pid, info in list(self.suspended_processes.items()):
+                elapsed = now - info['suspend_time']
+                if elapsed >= info['auto_kill_seconds']:
+                    to_kill.append(pid)
         
         for pid in to_kill:
-            info = self.suspended_processes.pop(pid)
+            with self.lock:
+                if pid not in self.suspended_processes:
+                    continue
+                info = self.suspended_processes.pop(pid)
             print(f"[AUTO-KILL] Timer expired for {info['name']} (PID {pid})")
             self._execute_kill(pid, "Auto-kill timer expired", info['name'])
     
     def get_pending_reviews(self) -> List[Dict]:
         """Get list of processes awaiting user decision"""
-        return self.pending_reviews
+        with self.lock:
+            return list(self.pending_reviews)
     
     def get_suspended_processes(self) -> Dict:
         """Get list of currently suspended processes"""
-        return self.suspended_processes
+        with self.lock:
+            return dict(self.suspended_processes)
     
     def approve_kill(self, pid: int):
         """User approved kill for a pending review"""
-        for i, review in enumerate(self.pending_reviews):
-            if review['pid'] == pid:
-                self._execute_kill(pid, "User approved", review['name'])
-                self.pending_reviews.pop(i)
-                return True
+        with self.lock:
+            for i, review in enumerate(self.pending_reviews):
+                if review['pid'] == pid:
+                    self._execute_kill(pid, "User approved", review['name'])
+                    self.pending_reviews.pop(i)
+                    return True
         return False
     
     def whitelist_and_resume(self, pid: int):
         """User whitelisted process - resume and remember"""
-        for i, review in enumerate(self.pending_reviews):
-            if review['pid'] == pid:
-                self.graph.trust_engine.add_to_whitelist(review['full_path'])
-                print(f"[WHITELIST] Added {review['name']} to whitelist - resuming")
-                self.pending_reviews.pop(i)
-                
-                if pid in self.suspended_processes:
-                    del self.suspended_processes[pid]
-                
-                return True
+        with self.lock:
+            for i, review in enumerate(self.pending_reviews):
+                if review['pid'] == pid:
+                    self.graph.trust_engine.add_to_whitelist(review['full_path'])
+                    print(f"[WHITELIST] Added {review['name']} to whitelist - resuming")
+                    self.pending_reviews.pop(i)
+                    
+                    if pid in self.suspended_processes:
+                        del self.suspended_processes[pid]
+                    
+                    return True
         return False

@@ -264,17 +264,22 @@ class MemoryScanner:
         return findings
     
     def _analyze_memory_regions(self, h_process, pid: int, name: str) -> List[Dict]:
-        """Analyze memory regions for suspicious patterns"""
+        """Analyze memory regions for suspicious patterns across 64-bit address space"""
         findings = []
         
         try:
             import win32process
             
-            # Get memory info
+            # Get memory info across 64-bit user space range
             address = 0
-            while address < 0x7FFFFFFF:  # User space limit
+            consecutive_failures = 0
+            while address < 0x7FFFFFFFFFFF:  # 64-bit Windows user space limit
                 try:
                     mbi = win32process.VirtualQueryEx(h_process, address)
+                    consecutive_failures = 0
+                    
+                    if not mbi or mbi.RegionSize <= 0:
+                        break
                     
                     # Check for suspicious memory patterns
                     if self._is_suspicious_memory(mbi, h_process, address):
@@ -286,7 +291,10 @@ class MemoryScanner:
                     address = mbi.BaseAddress + mbi.RegionSize
                     
                 except Exception:
-                    address += 0x1000  # Skip 4KB and continue
+                    consecutive_failures += 1
+                    if consecutive_failures > 10:  # Prevent infinite loop in high unallocated addresses
+                        break
+                    address += 0x10000  # Skip 64KB (Windows allocation granularity) and continue
                     
         except Exception as e:
             print(f"[MEMORY] Memory analysis error for PID {pid}: {e}")

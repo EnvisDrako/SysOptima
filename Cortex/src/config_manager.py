@@ -13,6 +13,7 @@ class ConfigManager:
     def __init__(self, config_file='sysoptima_config.json'):
         self.config_file = config_file
         self.config = {}
+        self.mode_change_callback = None
         self.load_config()
     
     def load_config(self):
@@ -216,6 +217,8 @@ class ConfigManager:
             self.config['mode'] = mode
             self.save_config()
             print(f"[CONFIG] Mode changed to {mode}")
+            if self.mode_change_callback:
+                self.mode_change_callback(mode)
         else:
             print(f"[CONFIG] Invalid mode: {mode}. Valid: {valid_modes}")
     

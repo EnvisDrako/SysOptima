@@ -76,6 +76,7 @@ CMD_SUSPEND_PID = 2
 CMD_KILL_TREE = 3
 CMD_QUARANTINE = 4
 CMD_CLEANUP_PERSISTENCE = 5
+CMD_SET_MODE = 7
 
 # Modes
 MODE_PRODUCTION = 0  # Only critical threats
@@ -755,6 +756,22 @@ def main():
         evt_queue = queue.Queue()
         
         threat_graph = ThreatGraph(cmd_queue, ai_observer, database=database)
+        
+        # Configure and register mode-change callbacks to control C++ sensor
+        def on_mode_changed(mode_str: str):
+            mode_map = {
+                'PRODUCTION': 0,
+                'SMART': 1,
+                'LEARNING': 2
+            }
+            mode_int = mode_map.get(mode_str, 1)
+            print(f"[CONTROL] Mode changed to {mode_str}. Dispatching CMD_SET_MODE ({mode_int}) to Sentinel.")
+            cmd_queue.put(pack_command(CMD_SET_MODE, mode_int))
+        
+        config.mode_change_callback = on_mode_changed
+        
+        # Dispatch initial mode to Sentinel
+        on_mode_changed(config.get_mode())
         
         print(f"[✓] Threat graph initialized")
         print(f"    Trust engine: ACTIVE")

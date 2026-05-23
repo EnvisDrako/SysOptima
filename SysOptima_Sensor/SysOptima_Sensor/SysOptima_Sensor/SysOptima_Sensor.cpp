@@ -53,7 +53,7 @@ using namespace std::chrono;
 // CONFIGURATION
 // ================================================================
 
-const int MODE = 1;  // 0=Production, 1=Smart, 2=Learning
+int g_mode = 1;  // 0=Production, 1=Smart, 2=Learning
 const int REORDER_BUFFER_MS = 500;
 const int MEMORY_SCAN_INTERVAL_MS = 10000;
 const int AGGREGATION_FLUSH_MS = 100;
@@ -119,7 +119,8 @@ enum CommandType {
     CMD_KILL_TREE = 3,
     CMD_QUARANTINE = 4,
     CMD_CLEANUP_PERSISTENCE = 5,
-    CMD_UPDATE_THREAT_CACHE = 6
+    CMD_UPDATE_THREAT_CACHE = 6,
+    CMD_SET_MODE = 7
 };
 
 #pragma pack(push, 1)
@@ -1351,6 +1352,17 @@ void CommandListenerThread() {
                 // Python can send threat intel updates
                 g_threat_cache->AddMalwareHash(cmd.param);
                 break;
+            case CMD_SET_MODE:
+                {
+                    g_mode = cmd.target_pid;
+                    const wchar_t* mode_names[] = { L"PRODUCTION", L"SMART", L"LEARNING" };
+                    if (g_mode >= 0 && g_mode <= 2) {
+                        wcout << L"[CONTROL] EDR Mode dynamically updated to: " << mode_names[g_mode] << endl;
+                    } else {
+                        wcout << L"[CONTROL] Received invalid mode code: " << g_mode << endl;
+                    }
+                }
+                break;
             }
         }
         else {
@@ -1510,10 +1522,10 @@ void OnProcessStart(const EVENT_RECORD& record, const trace_context& trace_conte
         int threat = g_graph->CalculateThreatLevel(proc);
 
         bool should_send = false;
-        if (MODE == 2) {
+        if (g_mode == 2) {
             should_send = true;  // Learning mode: send everything
         }
-        else if (MODE == 1) {
+        else if (g_mode == 1) {
             should_send = (threat > 0 || !proc.is_signed || proc.origin_tag == "Internet");
         }
         else {
@@ -1539,7 +1551,7 @@ void OnProcessStart(const EVENT_RECORD& record, const trace_context& trace_conte
 
             SendEventDirect(evt);
 
-            if (MODE >= 1) {
+            if (g_mode >= 1) {
                 wcout << L"[PROC] " << filename << L" (Threat: " << threat << L")" << endl;
             }
         }
@@ -1735,7 +1747,7 @@ int main() {
     wcout << endl;
 
     const wchar_t* mode_names[] = { L"PRODUCTION", L"SMART", L"LEARNING" };
-    wcout << L"[MODE] " << mode_names[MODE] << L" MODE" << endl;
+    wcout << L"[MODE] " << mode_names[g_mode] << L" MODE" << endl;
     wcout << endl;
 
     // Initialize global objects
