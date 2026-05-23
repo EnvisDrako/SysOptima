@@ -316,6 +316,37 @@ class EventDatabase:
             ''', (limit,))
             return [dict(row) for row in cursor.fetchall()]
     
+    def query_events_by_pid(self, pid: int) -> List[Dict]:
+        """Get all events for a specific PID, ordered chronologically"""
+        with self.lock:
+            cursor = self.connection.cursor()
+            cursor.execute('''
+                SELECT * FROM events 
+                WHERE pid = ?
+                ORDER BY timestamp ASC
+            ''', (pid,))
+            return [dict(row) for row in cursor.fetchall()]
+            
+    def query_events(self, hours: int = 24, threat_level: Optional[int] = None) -> List[Dict]:
+        """Query historical events in the last N hours, optionally filtered by threat level"""
+        with self.lock:
+            cursor = self.connection.cursor()
+            start_timestamp = int((time.time() - (hours * 3600)) * 1000)
+            
+            if threat_level is not None:
+                cursor.execute('''
+                    SELECT * FROM events 
+                    WHERE timestamp >= ? AND threat_level = ?
+                    ORDER BY timestamp DESC
+                ''', (start_timestamp, threat_level))
+            else:
+                cursor.execute('''
+                    SELECT * FROM events 
+                    WHERE timestamp >= ?
+                    ORDER BY timestamp DESC
+                ''', (start_timestamp,))
+            return [dict(row) for row in cursor.fetchall()]
+
     def get_stats(self) -> Dict:
         """Get database statistics"""
         with self.lock:
@@ -497,9 +528,16 @@ class EventDatabase:
     
     def close(self):
         """Close database connection"""
-        if self.connection:
-            self.connection.close()
-            print("[DB] Connection closed")
+        with self.lock:
+            if self.connection:
+                try:
+                    self.connection.commit()
+                    self.connection.close()
+                    print("[DB] Connection closed cleanly")
+                except Exception as e:
+                    print(f"[DB] Error closing connection: {e}")
+                finally:
+                    self.connection = None
 
 
 # ================================================================

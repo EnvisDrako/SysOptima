@@ -225,6 +225,10 @@ class ResponseOrchestrator:
             except Exception as e:
                 print(f"[RESPONSE] Tree quarantine failed: {e}")
         
+        # [WATCHDOG-PROOF] Suspend the root process first to freeze all watchdog activity
+        self.command_queue.put(pack_command(CMD_SUSPEND_PID, pid))
+        print(f"[RESPONSE] [TREE_KILL] Suspended root process {name} (PID {pid}) to freeze watchdog recovery.")
+
         descendants = lineage.get('descendants', [])
         if descendants:
             print(f"[RESPONSE] [TREE_KILL] Initiating smart bottom-up snipping for {len(descendants)} children...")
@@ -237,7 +241,7 @@ class ResponseOrchestrator:
                     print(f"[RESPONSE] [KILL] Smart Terminate (Child Leaf): {desc_name} (PID {desc_pid})")
                     time.sleep(0.05)
         
-        self.command_queue.put(pack_command(CMD_KILL_PID, pid))
+        # Remove duplicate CMD_KILL_PID for root, CMD_KILL_TREE terminates root cleanly
         self.command_queue.put(pack_command(CMD_KILL_TREE, pid))
         print(f"[RESPONSE] [TREE_KILL] Smart Kill Tree completed for root: {name} (PID {pid}) - {reason}")
         return {'type': 'KILL_TREE', 'reason': reason}

@@ -464,24 +464,70 @@ inline bool ThreatIntelligence::UpdateFromFeeds() {
 // ================================================================
 
 inline bool ThreatIntelligence::UpdateFromMalwareBazaar() {
-    // MalwareBazaar recent samples (free API)
-    string url = "https://mb-api.abuse.ch/api/v1/";
-
-    // In production, you'd use their API properly
-    // This is a simplified example
-    wcout << L"[INTEL] Would update from MalwareBazaar (API key required)" << endl;
-
-    // Example: Add some known bad hashes (you'd get these from the API)
-    // For now, just return true to show the structure works
+    wcout << L"[INTEL] Fetching recent malware hashes from MalwareBazaar plain text feed..." << endl;
+    string data = DownloadString("https://bazaar.abuse.ch/export/txt/sha256/recent/");
+    if (data.empty()) {
+        wcout << L"[WARN] MalwareBazaar download empty" << endl;
+        return false;
+    }
+    
+    stringstream ss(data);
+    string line;
+    int added = 0;
+    while (getline(ss, line)) {
+        // Strip carriage returns and newlines
+        line.erase(remove(line.begin(), line.end(), '\r'), line.end());
+        line.erase(remove(line.begin(), line.end(), '\n'), line.end());
+        
+        if (line.empty() || line[0] == '#') continue;
+        
+        // Match SHA256 length exactly
+        if (line.length() == 64) {
+            transform(line.begin(), line.end(), line.begin(), ::tolower);
+            known_malware_hashes.insert(line);
+            added++;
+        }
+    }
+    wcout << L"[INTEL] MalwareBazaar: Added " << added << L" recent malware hashes." << endl;
     return true;
 }
 
 inline bool ThreatIntelligence::UpdateFromAbuseIPDB() {
-    // AbuseIPDB API (requires API key)
-    wcout << L"[INTEL] Would update from AbuseIPDB (API key required)" << endl;
-
-    // In production, you'd download their blacklist
-    // This is a simplified example
+    wcout << L"[INTEL] Fetching Feodo Tracker malicious IP blocklist..." << endl;
+    string data = DownloadString("https://feodotracker.abuse.ch/downloads/ipblocklist.txt");
+    if (data.empty()) {
+        wcout << L"[WARN] Feodo Tracker download empty. Trying fallback public abuse IP list..." << endl;
+        // Fallback to FireHOL abuseipdb list
+        data = DownloadString("https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/abuseipdb_30d.ipset");
+        if (data.empty()) {
+            wcout << L"[WARN] Fallback IP blacklist empty" << endl;
+            return false;
+        }
+    }
+    
+    stringstream ss(data);
+    string line;
+    int added = 0;
+    while (getline(ss, ss.eof() ? '\0' : '\n')) {
+        // Safe line extraction
+        line = ss.str();
+        break; // Let's use standard getline loop instead for robustness
+    }
+    
+    stringstream ss2(data);
+    while (getline(ss2, line)) {
+        line.erase(remove(line.begin(), line.end(), '\r'), line.end());
+        line.erase(remove(line.begin(), line.end(), '\n'), line.end());
+        
+        if (line.empty() || line[0] == '#') continue;
+        
+        // Basic validation for IP address
+        if (line.find('.') != string::npos) {
+            malicious_ips.insert(line);
+            added++;
+        }
+    }
+    wcout << L"[INTEL] IP Blacklist: Added " << added << L" malicious IPs." << endl;
     return true;
 }
 

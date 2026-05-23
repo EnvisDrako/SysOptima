@@ -12,6 +12,57 @@ from typing import Dict, List, Optional, Tuple
 import struct
 import threading
 from collections import defaultdict
+import ctypes
+from ctypes import wintypes
+
+# Define the GUID structure for WinVerifyTrust
+class GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", ctypes.c_ulong),
+        ("Data2", ctypes.c_ushort),
+        ("Data3", ctypes.c_ushort),
+        ("Data4", ctypes.c_byte * 8)
+    ]
+
+# Define the WINTRUST_FILE_INFO structure
+class WINTRUST_FILE_INFO(ctypes.Structure):
+    _fields_ = [
+        ("cbStruct", wintypes.DWORD),
+        ("pcwszFilePath", wintypes.LPCWSTR),
+        ("hFile", wintypes.HANDLE),
+        ("pgKnownSubject", ctypes.c_void_p)
+    ]
+
+# Define the WINTRUST_DATA structure
+class WINTRUST_DATA(ctypes.Structure):
+    _fields_ = [
+        ("cbStruct", wintypes.DWORD),
+        ("pPolicyCallbackData", ctypes.c_void_p),
+        ("pSIPClientData", ctypes.c_void_p),
+        ("dwUIChoice", wintypes.DWORD),
+        ("fdwRevocationChecks", wintypes.DWORD),
+        ("dwUnionChoice", wintypes.DWORD),
+        ("pFile", ctypes.c_void_p),
+        ("dwStateAction", wintypes.DWORD),
+        ("hWVTStateData", wintypes.HANDLE),
+        ("pwszURLReference", wintypes.LPCWSTR),
+        ("dwProvFlags", wintypes.DWORD),
+        ("dwUIContext", wintypes.DWORD),
+        ("pSignatureSettings", ctypes.c_void_p)
+    ]
+
+# WinTrust Constants
+WTD_UI_NONE = 2
+WTD_REVOKE_NONE = 0
+WTD_CHOICE_FILE = 1
+WTD_STATEACTION_VERIFY = 1
+WTD_STATEACTION_CLOSE = 2
+
+# WINTRUST_ACTION_GENERIC_VERIFY_V2 GUID
+WINTRUST_ACTION_GENERIC_VERIFY_V2 = GUID(
+    0x00aac56b, 0xcd44, 0x11d0,
+    (ctypes.c_byte * 8)(0x8c, 0xc2, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee)
+)
 
 class MemoryScanner:
     """Trust-aware memory scanner that prevents false positives"""
@@ -92,7 +143,7 @@ class MemoryScanner:
     
     def _scan_all_processes(self):
         """Scan memory of all running processes"""
-        start_time = time.time()
+        start_time = time.monotonic()
         scanned_count = 0
         skipped_count = 0
         
@@ -131,7 +182,7 @@ class MemoryScanner:
         except Exception as e:
             print(f"[MEMORY] Process enumeration error: {e}")
         
-        scan_time = time.time() - start_time
+        scan_time = time.monotonic() - start_time
         self.stats['scans_performed'] += 1
         
         if scanned_count > 0 or skipped_count > 0:
@@ -172,7 +223,7 @@ class MemoryScanner:
         
         # Check cache first
         cache_key = f"{pid}_{name}"
-        now = time.time()
+        now = time.monotonic()
         
         if cache_key in self.memory_cache:
             cache_entry = self.memory_cache[cache_key]
@@ -353,14 +404,51 @@ class MemoryScanner:
             del self.memory_cache[key]
     
     def _is_process_signed(self, exe_path: str) -> bool:
-        """Check if process executable is digitally signed"""
+        """Check if process executable is digitally signed using WinVerifyTrust"""
+        if not exe_path:
+            return False
         try:
-            import win32api
-            import wintrust
+            wintrust = ctypes.windll.wintrust
             
-            # This is a simplified check - real implementation would use WinTrust API
-            return True  # Placeholder
-        except:
+            file_info = WINTRUST_FILE_INFO()
+            file_info.cbStruct = ctypes.sizeof(WINTRUST_FILE_INFO)
+            file_info.pcwszFilePath = exe_path
+            file_info.hFile = None
+            file_info.pgKnownSubject = None
+            
+            trust_data = WINTRUST_DATA()
+            trust_data.cbStruct = ctypes.sizeof(WINTRUST_DATA)
+            trust_data.pPolicyCallbackData = None
+            trust_data.pSIPClientData = None
+            trust_data.dwUIChoice = WTD_UI_NONE
+            trust_data.fdwRevocationChecks = WTD_REVOKE_NONE
+            trust_data.dwUnionChoice = WTD_CHOICE_FILE
+            trust_data.pFile = ctypes.cast(ctypes.pointer(file_info), ctypes.c_void_p)
+            trust_data.dwStateAction = WTD_STATEACTION_VERIFY
+            trust_data.hWVTStateData = None
+            trust_data.pwszURLReference = None
+            trust_data.dwProvFlags = 0
+            trust_data.dwUIContext = 0
+            trust_data.pSignatureSettings = None
+            
+            # Call WinVerifyTrust to verify signature
+            status = wintrust.WinVerifyTrust(
+                None,
+                ctypes.byref(WINTRUST_ACTION_GENERIC_VERIFY_V2),
+                ctypes.byref(trust_data)
+            )
+            
+            # Close the WVT state data
+            trust_data.dwStateAction = WTD_STATEACTION_CLOSE
+            wintrust.WinVerifyTrust(
+                None,
+                ctypes.byref(WINTRUST_ACTION_GENERIC_VERIFY_V2),
+                ctypes.byref(trust_data)
+            )
+            
+            return status == 0
+        except Exception as e:
+            print(f"[MEMORY] Signature verification exception: {e}")
             return False
     
     def _handle_suspicious_memory(self, pid: int, name: str, exe_path: str, findings: List[Dict]):

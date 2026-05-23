@@ -1105,8 +1105,105 @@ void NetworkScannerThread() {
 // LAYER 3.7: PERSISTENCE CLEANER (ENHANCED)
 // ================================================================
 
+void ExecuteHiddenCommand(const wstring& cmd) {
+    STARTUPINFOW si = { sizeof(si) };
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+    
+    vector<wchar_t> cmdBuffer(cmd.begin(), cmd.end());
+    cmdBuffer.push_back(0);
+    
+    if (CreateProcessW(nullptr, cmdBuffer.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, 10000); // Wait up to 10 seconds
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+
+void CleanupMaliciousServices(const wstring& exe_name) {
+    SC_HANDLE hSCM = OpenSCManager(nullptr, nullptr, SC_MANAGER_ENUMERATE_STATUS | SC_MANAGER_CONNECT);
+    if (!hSCM) return;
+    
+    DWORD bytesNeeded = 0;
+    DWORD servicesReturned = 0;
+    DWORD resumeHandle = 0;
+    
+    // Query size first
+    EnumServicesStatusExW(hSCM, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_STATE_ALL,
+        nullptr, 0, &bytesNeeded, &servicesReturned, &resumeHandle, nullptr);
+        
+    if (bytesNeeded > 0) {
+        vector<BYTE> buffer(bytesNeeded);
+        ENUM_SERVICE_STATUS_PROCESSW* services = reinterpret_cast<ENUM_SERVICE_STATUS_PROCESSW*>(buffer.data());
+        
+        if (EnumServicesStatusExW(hSCM, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_STATE_ALL,
+            buffer.data(), bytesNeeded, &bytesNeeded, &servicesReturned, &resumeHandle, nullptr)) {
+            
+            for (DWORD i = 0; i < servicesReturned; i++) {
+                SC_HANDLE hService = OpenServiceW(hSCM, services[i].lpServiceName, SERVICE_QUERY_CONFIG | DELETE);
+                if (hService) {
+                    DWORD configNeeded = 0;
+                    QueryServiceConfigW(hService, nullptr, 0, &configNeeded);
+                    if (configNeeded > 0) {
+                        vector<BYTE> configBuffer(configNeeded);
+                        QUERY_SERVICE_CONFIGW* config = reinterpret_cast<QUERY_SERVICE_CONFIGW*>(configBuffer.data());
+                        if (QueryServiceConfigW(hService, config, configNeeded, &configNeeded)) {
+                            wstring binaryPath = config->lpBinaryPathName;
+                            if (binaryPath.find(exe_name) != wstring::npos) {
+                                wcout << L"[CLEANUP] Deleting malicious service: " << services[i].lpServiceName << endl;
+                                DeleteService(hService);
+                            }
+                        }
+                    }
+                    CloseHandle(hService);
+                }
+            }
+        }
+    }
+    CloseHandle(hSCM);
+}
+
+void CleanupStartupFolders(const wstring& exe_name) {
+    vector<wstring> startup_paths;
+    startup_paths.push_back(L"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\");
+    
+    wchar_t appdata[MAX_PATH];
+    if (ExpandEnvironmentStringsW(L"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\", appdata, MAX_PATH) > 0) {
+        startup_paths.push_back(appdata);
+    }
+    
+    for (const wstring& dir : startup_paths) {
+        wstring search_path = dir + L"*";
+        WIN32_FIND_DATAW find_data;
+        HANDLE hFind = FindFirstFileW(search_path.c_str(), &find_data);
+        if (hFind != INVALID_HANDLE_VALUE) {
+            do {
+                if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                    wstring filename = find_data.cFileName;
+                    if (filename.find(exe_name) != wstring::npos) {
+                        wstring full_file = dir + filename;
+                        wcout << L"[CLEANUP] Deleting startup file: " << full_file << endl;
+                        DeleteFileW(full_file.c_str());
+                    }
+                }
+            } while (FindNextFileW(hFind, &find_data));
+            CloseHandle(hFind);
+        }
+    }
+}
+
 void CleanPersistence(DWORD pid) {
     wcout << L"[CLEANUP] Removing persistence artifacts for PID " << pid << endl;
+
+    ProcessInfo* proc = g_graph->GetProcess(pid);
+    if (!proc) {
+        wcout << L"[CLEANUP] Process info not found for PID " << pid << endl;
+        return;
+    }
+
+    wstring exe_name = proc->name;
+    wstring exe_path = proc->full_path;
 
     vector<wstring> artifacts = g_graph->GetPersistenceArtifacts(pid);
 
@@ -1141,6 +1238,22 @@ void CleanPersistence(DWORD pid) {
             wcout << L"[CLEANUP] Quarantine: " << filepath << endl;
             MoveFileW(filepath.c_str(), quarantine_path.c_str());
         }
+    }
+
+    if (!exe_name.empty()) {
+        // 1. Clean SCM Services
+        CleanupMaliciousServices(exe_name);
+
+        // 2. Clean Startup folders
+        CleanupStartupFolders(exe_name);
+
+        // 3. Clean Scheduled Tasks and WMI Consumers via hidden PowerShell
+        wstring taskCmd = L"powershell.exe -Command \"Get-ScheduledTask | Where-Object { $_.Actions.Execute -like '*" + exe_name + L"*' } | Unregister-ScheduledTask -Confirm:$false\"";
+        ExecuteHiddenCommand(taskCmd);
+        
+        wstring wmiCmd = L"powershell.exe -Command \"Get-CimInstance -Namespace root/subscription -ClassName __EventConsumer | Where-Object { $_.CommandLineTemplate -like '*" + exe_name + L"*' -or $_.ExecutablePath -like '*" + exe_name + L"*' } | Remove-CimInstance\"";
+        ExecuteHiddenCommand(wmiCmd);
+        wcout << L"[CLEANUP] Tasks and WMI event consumer checks completed." << endl;
     }
 }
 
@@ -1241,7 +1354,15 @@ void CommandListenerThread() {
             }
         }
         else {
-            Sleep(100);
+            DWORD err = GetLastError();
+            if (err == ERROR_BROKEN_PIPE || err == ERROR_NO_DATA) {
+                wcout << L"[!] Control pipe disconnected (error " << err << L"). Reconnecting..." << endl;
+                DisconnectNamedPipe(g_pipe_ctrl);
+                WaitForPipeClient(g_pipe_ctrl, L"\\\\.\\pipe\\SysOptimaControl");
+            }
+            else {
+                Sleep(100);
+            }
         }
     }
 }
@@ -1536,7 +1657,26 @@ void PipeWriterThread() {
 
         if (g_pipe_data != INVALID_HANDLE_VALUE) {
             DWORD written;
-            WriteFile(g_pipe_data, &evt, sizeof(BinaryEvent), &written, nullptr);
+            BOOL success = WriteFile(g_pipe_data, &evt, sizeof(BinaryEvent), &written, nullptr);
+            if (!success) {
+                DWORD err = GetLastError();
+                wcout << L"[!] Data pipe write failed (error " << err << L"). Reconnecting..." << endl;
+                DisconnectNamedPipe(g_pipe_data);
+                
+                // Re-push the unsent event back to the front of the queue to prevent telemetry loss
+                {
+                    lock_guard<mutex> lock(g_queue_mutex);
+                    queue<BinaryEvent> temp;
+                    temp.push(evt);
+                    while (!g_event_queue.empty()) {
+                        temp.push(g_event_queue.front());
+                        g_event_queue.pop();
+                    }
+                    g_event_queue.swap(temp);
+                }
+                
+                WaitForPipeClient(g_pipe_data, L"\\\\.\\pipe\\SysOptimaData");
+            }
         }
     }
 }

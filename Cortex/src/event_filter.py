@@ -18,7 +18,7 @@ class EventFilter:
         Check if the event is unique inside the sliding window.
         Returns True if the event is new, False if it should be deduplicated (dropped).
         """
-        now = time.time()
+        now = time.monotonic()
         key = (pid, event_type, identifier)
         
         # Prune old cache entries if it gets large to keep memory usage small

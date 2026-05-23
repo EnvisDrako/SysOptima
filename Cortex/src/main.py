@@ -217,6 +217,20 @@ class AIObserver:
     
     def _extract_feature_vector(self, features: Dict) -> np.array:
         """Convert features dict to numpy array, enriched with graph topological context"""
+        tags = features.get('tags', [])
+        
+        # Semantic one-hot/multi-hot behavioral tag features
+        has_shell = 1 if any('SHELL' in t or 'POWERSHELL' in t for t in tags) else 0
+        has_registry = 1 if any('REGISTRY' in t for t in tags) else 0
+        has_persistence = 1 if any('PERSISTENCE' in t for t in tags) else 0
+        has_credential = 1 if any('CREDENTIAL' in t for t in tags) else 0
+        has_evasion = 1 if any('DEFENSE_EVASION' in t for t in tags) else 0
+        has_discovery = 1 if any('DISCOVERY' in t for t in tags) else 0
+        has_lateral = 1 if any('LATERAL' in t for t in tags) else 0
+        has_mass_act = 1 if any('MASS_' in t for t in tags) else 0
+        has_unsigned = 1 if any('UNSIGNED' in t for t in tags) else 0
+        has_internet = 1 if any('INTERNET' in t for t in tags) else 0
+        
         return np.array([
             features.get('file_writes', 0),
             features.get('registry_writes', 0),
@@ -224,7 +238,20 @@ class AIObserver:
             features.get('child_count', 0),
             features.get('threat_level', 0),
             1 if features.get('is_signed', True) else 0,
-            len(features.get('tags', [])),
+            
+            # Rich semantic features (replaces len(tags))
+            has_shell,
+            has_registry,
+            has_persistence,
+            has_credential,
+            has_evasion,
+            has_discovery,
+            has_lateral,
+            has_mass_act,
+            has_unsigned,
+            has_internet,
+            
+            # Topological context
             features.get('tree_depth', 0),
             features.get('suspicious_parent', 0),
             features.get('lineage_score', 0.0)
@@ -255,7 +282,13 @@ class AIObserver:
             with open(AI_MODEL_FILE, 'rb') as f:
                 data = pickle.load(f)
             
-            self.scaler = data['scaler']
+            scaler = data['scaler']
+            
+            # Verify feature dimension shape to self-heal shape mismatch
+            if hasattr(scaler, 'n_features_in_') and scaler.n_features_in_ != 19:
+                raise ValueError(f"Feature dimension mismatch: expected 19, found {scaler.n_features_in_}")
+                
+            self.scaler = scaler
             self.models = data['models']
             self.baseline_stats = data['baseline_stats']
             self.is_trained = True
@@ -267,7 +300,9 @@ class AIObserver:
             print(f"[AI] Baseline: {self.baseline_stats}")
             return True
         except Exception as e:
-            print(f"[AI] Failed to load models: {e}")
+            print(f"[AI] Failed to load models (possibly due to feature dimension upgrades): {e}")
+            print(f"[AI] Resetting and disabling until a new baseline is trained.")
+            self.is_trained = False
             return False
 
 # ================================================================
@@ -300,58 +335,78 @@ def parse_binary_event(data):
         return None
 
 def pipe_reader_thread(graph, event_queue):
-    print(f"[*] Connecting to Data Pipe: {PIPE_DATA_NAME}")
-    retry_count = 0
     while True:
-        try:
-            pipe = win32file.CreateFile(PIPE_DATA_NAME, win32file.GENERIC_READ, 0, None, win32file.OPEN_EXISTING, 0, None)
-            print("[+] Connected to Data Stream")
-            break
-        except Exception as e:
-            retry_count += 1
-            if retry_count % 5 == 0:
-                print(f"[!] Still waiting for C++ (attempt {retry_count})... Is SysOptimaSentinel.exe running?")
-            time.sleep(1)
-    
-    buffer = b''
-    while True:
-        try:
-            hr, data = win32file.ReadFile(pipe, 4096)
-            buffer += data
-            while len(buffer) >= BINARY_EVENT_SIZE:
-                event_data = buffer[:BINARY_EVENT_SIZE]
-                buffer = buffer[BINARY_EVENT_SIZE:]
-                evt = parse_binary_event(event_data)
-                if evt:
-                    event_queue.put(evt)
-        except win32file.error:
-            print("[!] Pipe disconnected")
-            break
+        print(f"[*] Connecting to Data Pipe: {PIPE_DATA_NAME}")
+        pipe = None
+        retry_count = 0
+        while True:
+            try:
+                pipe = win32file.CreateFile(PIPE_DATA_NAME, win32file.GENERIC_READ, 0, None, win32file.OPEN_EXISTING, 0, None)
+                print("[+] Connected to Data Stream")
+                break
+            except Exception as e:
+                retry_count += 1
+                if retry_count % 5 == 0:
+                    print(f"[!] Still waiting for C++ (attempt {retry_count})... Is SysOptimaSentinel.exe running?")
+                time.sleep(1)
+        
+        buffer = b''
+        while True:
+            try:
+                hr, data = win32file.ReadFile(pipe, 4096)
+                buffer += data
+                while len(buffer) >= BINARY_EVENT_SIZE:
+                    event_data = buffer[:BINARY_EVENT_SIZE]
+                    buffer = buffer[BINARY_EVENT_SIZE:]
+                    evt = parse_binary_event(event_data)
+                    if evt:
+                        event_queue.put(evt)
+            except win32file.error as e:
+                print(f"[!] Data pipe disconnected: {e}. Reconnecting...")
+                break
+        
+        if pipe:
+            try:
+                win32file.CloseHandle(pipe)
+            except:
+                pass
+        time.sleep(1)
 
 def pipe_writer_thread(command_queue):
-    print(f"[*] Connecting to Control Pipe: {PIPE_CTRL_NAME}")
-    retry_count = 0
     while True:
-        try:
-            pipe = win32file.CreateFile(PIPE_CTRL_NAME, win32file.GENERIC_WRITE, 0, None, win32file.OPEN_EXISTING, 0, None)
-            print("[+] Connected to Control Stream")
-            break
-        except Exception as e:
-            retry_count += 1
-            if retry_count % 5 == 0:
-                print(f"[!] Still waiting for C++ (attempt {retry_count})...")
-            time.sleep(1)
-    
-    while True:
-        try:
-            cmd_bytes = command_queue.get()
-            win32file.WriteFile(pipe, cmd_bytes)
-        except Exception as e:
-            print(f"[!] Write error: {e}")
-            break
+        print(f"[*] Connecting to Control Pipe: {PIPE_CTRL_NAME}")
+        pipe = None
+        retry_count = 0
+        while True:
+            try:
+                pipe = win32file.CreateFile(PIPE_CTRL_NAME, win32file.GENERIC_WRITE, 0, None, win32file.OPEN_EXISTING, 0, None)
+                print("[+] Connected to Control Stream")
+                break
+            except Exception as e:
+                retry_count += 1
+                if retry_count % 5 == 0:
+                    print(f"[!] Still waiting for C++ (attempt {retry_count})...")
+                time.sleep(1)
+        
+        while True:
+            try:
+                cmd_bytes = command_queue.get()
+                win32file.WriteFile(pipe, cmd_bytes)
+            except Exception as e:
+                print(f"[!] Write error on control pipe: {e}. Reconnecting...")
+                # Save unsent command in memory by putting it back in the queue
+                command_queue.put(cmd_bytes)
+                break
+        
+        if pipe:
+            try:
+                win32file.CloseHandle(pipe)
+            except:
+                pass
+        time.sleep(1)
 
 def event_processor_thread(graph, event_queue):
-    last_prune = time.time()
+    last_prune = time.monotonic()
     event_filter = EventFilter(window_seconds=2.0)
 
     while True:
@@ -383,9 +438,9 @@ def event_processor_thread(graph, event_queue):
                 print(f"[CONFIRM] Process {event['pid']} Killed by Sentinel")
             elif e_type == EVT_PROCESS_END:
                 graph.remove_active_pid(event['pid'])
-            if time.time() - last_prune > 60:  # Every 60 seconds
+            if time.monotonic() - last_prune > 60:  # Every 60 seconds
                 graph.prune_old_nodes()  # <--- THIS FREES THE PYTHON RAM
-                last_prune = time.time()
+                last_prune = time.monotonic()
         except queue.Empty:
             continue
 
@@ -511,10 +566,8 @@ def handle_keyboard(ai_observer, orchestrator):
                 
                 elif key == 'Q':
                     print("\n[*] Shutting down...")
-                    # import sys
-                    # sys.exit(0)
-                    import os      # Make sure os is imported
-                    os._exit(0)    # <-- ADD THIS (Kills the whole process immediately)
+                    import sys
+                    sys.exit(0)
             
             time.sleep(0.1)  # Don't hog CPU
         
@@ -540,7 +593,35 @@ def main():
     SysOptima Complete Initialization
     Starts all components in correct order with proper error handling
     """
+    import atexit
+    import signal
     
+    def graceful_shutdown(*args):
+        print("\n[*] Graceful shutdown initiated...")
+        
+        # 1. Stop memory scanner
+        if 'memory_scanner' in globals() and memory_scanner:
+            try:
+                print("[*] Stopping memory scanner...")
+                memory_scanner.stop_scanning()
+            except:
+                pass
+                
+        # 2. Flush and close database
+        if 'database' in globals() and database:
+            try:
+                print("[*] Flushing and closing database...")
+                database.close()
+            except Exception as e:
+                print(f"[!] Error closing database: {e}")
+                
+        print("[✓] Clean shutdown complete.")
+        sys.exit(0)
+        
+    atexit.register(graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+
     # ================================================================
     # HEADER & INITIAL SETUP
     # ================================================================
@@ -1014,12 +1095,12 @@ def main():
 if __name__ == "__main__":
     try:
         exit_code = main()
-        os._exit(exit_code)
+        sys.exit(exit_code)
     except KeyboardInterrupt:
         print("\n[*] Interrupted by user. Shutting down cleanly...")
-        os._exit(0)
+        sys.exit(0)
     except Exception as e:
         print(f"\n[✗] FATAL ERROR: {e}")
         import traceback
         traceback.print_exc()
-        os._exit(1)
+        sys.exit(1)
