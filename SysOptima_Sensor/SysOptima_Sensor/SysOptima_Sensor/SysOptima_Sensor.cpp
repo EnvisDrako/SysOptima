@@ -110,7 +110,8 @@ enum EventType {
     EVT_NETWORK_CONNECT = 7,
     EVT_PROCESS_KILLED = 8,
     EVT_AGGREGATED = 9,
-    EVT_BEACON_DETECTED = 10
+    EVT_BEACON_DETECTED = 10,
+    EVT_HEARTBEAT = 11
 };
 
 enum CommandType {
@@ -1123,7 +1124,7 @@ void ExecuteHiddenCommand(const wstring& cmd) {
 }
 
 void CleanupMaliciousServices(const wstring& exe_name) {
-    SC_HANDLE hSCM = OpenSCManager(nullptr, nullptr, SC_MANAGER_ENUMERATE_STATUS | SC_MANAGER_CONNECT);
+    SC_HANDLE hSCM = OpenSCManager(nullptr, nullptr, SC_MANAGER_ENUMERATE_SERVICE | SC_MANAGER_CONNECT);
     if (!hSCM) return;
     
     DWORD bytesNeeded = 0;
@@ -1651,6 +1652,28 @@ void OnNetworkConnect(const EVENT_RECORD& record, const trace_context& trace_con
 }
 
 // ================================================================
+// HEARTBEAT SENSOR THREAD
+// ================================================================
+
+void HeartbeatThread() {
+    while (true) {
+        Sleep(5000); // 5-second pulse
+        if (g_pipe_data != INVALID_HANDLE_VALUE) {
+            BinaryEvent evt = {};
+            evt.event_type = 11; // EVT_HEARTBEAT
+            evt.timestamp = GetCurrentTimestamp();
+            evt.pid = 0;
+            strncpy_s(evt.name, "heartbeat", 255);
+            strncpy_s(evt.origin_tag, "Heartbeat", 31);
+            {
+                lock_guard<mutex> lock(g_queue_mutex);
+                g_event_queue.push(evt);
+            }
+        }
+    }
+}
+
+// ================================================================
 // PIPE WRITER THREAD
 // ================================================================
 
@@ -1774,9 +1797,9 @@ int main() {
     sa.bInheritHandle = FALSE;
     PSECURITY_DESCRIPTOR pSD = nullptr;
     
-    // SDDL: D:(A;;GA;;;SY)(A;;GA;;;BA) -> Allow Generic All to SYSTEM (SY) and Built-in Administrators (BA)
+    // SDDL: D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU) -> Allow Generic All to SYSTEM (SY) and Built-in Administrators (BA), and read/write to Interactive logon User (IU)
     if (ConvertStringSecurityDescriptorToSecurityDescriptorW(
-        L"D:(A;;GA;;;SY)(A;;GA;;;BA)",
+        L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)",
         SDDL_REVISION_1,
         &pSD,
         nullptr)) 
@@ -1844,6 +1867,9 @@ int main() {
 
     thread event_processor(EventProcessorThread);
     event_processor.detach();
+
+    thread heartbeat(HeartbeatThread);
+    heartbeat.detach();
 
     wcout << L"[+] All threads started" << endl;
     wcout << endl;

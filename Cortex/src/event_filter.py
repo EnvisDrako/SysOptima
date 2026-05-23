@@ -31,3 +31,10 @@ class EventFilter:
             
         self.seen_events[key] = now
         return True
+
+    def prune_expired(self):
+        """Remove all expired event entries from the cache to prevent memory leaks"""
+        now = time.monotonic()
+        expired = [k for k, v in self.seen_events.items() if now - v >= self.window_seconds]
+        for k in expired:
+            self.seen_events.pop(k, None)

@@ -638,26 +638,32 @@ class ThreatGraph:
         """Rolling window graph pruning (prevents memory leak, retains active/suspicious context)"""
         with self.lock:
             current_time = int(time.time() * 1000)
-            threshold = 600000  # 10 minutes (600,000 ms)
+            threshold = 600000  # 10 minutes (600,000 ms) for normal nodes
+            threat_threshold = 3600000  # 1 hour (3,600,000 ms) for threat nodes
             
             active_nodes = set(self.active_pids.values())
             
             to_remove = []
             for n in self.G.nodes():
                 node_data = self.G.nodes[n]
-                # Prune if node is older than 10 minutes
-                if current_time - node_data.get('timestamp', 0) > threshold:
-                    # Do NOT prune active process nodes!
-                    if n in active_nodes:
-                        continue
-                    # Do NOT prune suspicious or critical threat nodes!
-                    if node_data.get('threat', 0) >= 1:
-                        continue
-                    to_remove.append(n)
+                age = current_time - node_data.get('timestamp', 0)
+                
+                if node_data.get('threat', 0) >= 1:
+                    # Prune threat nodes after 1 hour
+                    if age > threat_threshold:
+                        if n in active_nodes:
+                            continue
+                        to_remove.append(n)
+                else:
+                    # Prune normal nodes after 10 minutes
+                    if age > threshold:
+                        if n in active_nodes:
+                            continue
+                        to_remove.append(n)
             
             self.G.remove_nodes_from(to_remove)
             if to_remove:
-                print(f"[GRAPH] Pruned {len(to_remove)} inactive safe processes from RAM.")
+                print(f"[GRAPH] Pruned {len(to_remove)} inactive/resolved processes from RAM.")
     
     def get_visualization_data(self):
         with self.lock:

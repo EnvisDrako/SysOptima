@@ -25,6 +25,30 @@ quarantine_manager = None
 malware_launcher = None
 
 # ============================================================================
+# AUTHENTICATION MIDDLEWARE
+# ============================================================================
+
+@app.before_request
+def check_authentication():
+    """Verify Bearer API Token for REST API endpoints"""
+    # Exclude UI templates and simple health check from authentication
+    if request.path.startswith('/api/') and request.path != '/api/health':
+        auth_header = request.headers.get('Authorization')
+        expected_token = "SysOptimaHardenedToken2026"
+        
+        if config:
+            expected_token = config.get('api.token', expected_token)
+            
+        token = None
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+        else:
+            token = request.args.get('token')
+            
+        if not token or token != expected_token:
+            return jsonify({'error': 'Unauthorized', 'message': 'Invalid or missing API token'}), 401
+
+# ============================================================================
 # REST API ENDPOINTS
 # ============================================================================
 
@@ -262,6 +286,10 @@ def whitelist_process(pid):
         return jsonify({'error': 'Process not found'}), 404
     
     threat_graph.trust_engine.add_to_whitelist(proc.full_path)
+    
+    if ai_observer:
+        ai_observer.add_feedback(proc, is_anomaly=False)
+        
     return jsonify({'status': 'success', 'path': proc.full_path})
 
 @app.route('/api/action/approve_kill/<int:pid>', methods=['POST'])
@@ -279,7 +307,15 @@ def whitelist_and_resume(pid):
     if not response_orchestrator:
         return jsonify({'error': 'Orchestrator not initialized'}), 500
     
+    proc = None
+    if threat_graph:
+        proc = threat_graph.GetProcess(pid)
+        
     success = response_orchestrator.whitelist_and_resume(pid)
+    
+    if success and proc and ai_observer:
+        ai_observer.add_feedback(proc, is_anomaly=False)
+        
     return jsonify({'status': 'success' if success else 'not_found'})
 
 @app.route('/api/action/resume/<int:pid>', methods=['POST'])

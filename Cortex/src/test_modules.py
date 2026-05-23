@@ -93,6 +93,11 @@ def test_quarantine_manager():
         
         print(f"\n[BOX] Testing quarantine of test file: {Path(test_file_path).name}")
         
+        # Calculate original file checksum for integrity assertion
+        import hashlib
+        with open(test_file_path, 'rb') as f:
+            orig_hash = hashlib.sha256(f.read()).hexdigest()
+            
         # Quarantine the test file
         quarantine_id = quarantine.quarantine_file(
             file_path=test_file_path,
@@ -123,11 +128,16 @@ def test_quarantine_manager():
             if quarantine.restore_file(quarantine_id, restore_path):
                 print(f"[PASS] File restored successfully")
                 
-                # Verify restored file
+                # Verify restored file and assert checksum
                 if os.path.exists(restore_path):
-                    with open(restore_path, 'r') as f:
-                        content = f.read()
-                    print(f"   Restored content length: {len(content)} chars")
+                    with open(restore_path, 'rb') as f:
+                        restored_content = f.read()
+                    restored_hash = hashlib.sha256(restored_content).hexdigest()
+                    print(f"   Restored content length: {len(restored_content)} bytes")
+                    print(f"   Original Hash: {orig_hash}")
+                    print(f"   Restored Hash: {restored_hash}")
+                    assert orig_hash == restored_hash, "Restored file hash mismatch!"
+                    print(f"[PASS] Checksum verified: File content integrity retained perfectly!")
                     os.unlink(restore_path)  # Clean up
                 
             # Test deletion
@@ -137,6 +147,30 @@ def test_quarantine_manager():
             
         else:
             print(f"[FAIL] Failed to quarantine test file")
+            return False
+            
+        # Negative test 1: Quarantine non-existent file
+        print("\n[NEGATIVE] Testing quarantine of non-existent file path")
+        bad_id = quarantine.quarantine_file(
+            file_path="C:\\non_existent_file_xyz_123.txt",
+            threat_level=1,
+            threat_reason="Negative test",
+            process_pid=123,
+            process_name="none"
+        )
+        if bad_id is None:
+            print("[PASS] Negative test 1 passed: Non-existent file quarantine was correctly rejected")
+        else:
+            print("[FAIL] Negative test 1 failed: Non-existent file quarantine returned ID")
+            return False
+            
+        # Negative test 2: Restore invalid quarantine ID
+        print("[NEGATIVE] Testing restore of invalid quarantine ID")
+        bad_restore = quarantine.restore_file("INVALID_ID_xyz", test_file_path + ".bad_restore")
+        if not bad_restore:
+            print("[PASS] Negative test 2 passed: Invalid ID restore was correctly rejected")
+        else:
+            print("[FAIL] Negative test 2 failed: Invalid ID restore returned True")
             return False
         
         return True

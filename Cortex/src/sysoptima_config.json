@@ -19,7 +19,7 @@
     "auto_suspend_enabled": true,
     "require_confirmation_for_trusted": true,
     "suspend_auto_kill_timer_seconds": 60,
-    "quarantine_path": "C:\\Users\\yacoo\\AppData\\Local\\Temp\\SysOptima_Quarantine_Test_ML_1779299072",
+    "quarantine_path": "%TEMP%\\SysOptima_Quarantine_Test_ML_1779299072",
     "cleanup_persistence": true,
     "network_isolation_enabled": false
   },
@@ -30,7 +30,7 @@
   },
   "malware_launcher": {
     "enabled": true,
-    "sandbox_path": "C:\\Users\\yacoo\\AppData\\Local\\Temp\\SysOptima_Sandbox_Test_1779299072",
+    "sandbox_path": "%TEMP%\\SysOptima_Sandbox_Test_1779299072",
     "execution_timeout_seconds": 10,
     "max_concurrent": 3,
     "auto_label_enabled": true,

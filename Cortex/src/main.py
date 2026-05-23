@@ -69,6 +69,7 @@ EVT_NETWORK_CONNECT = 7
 EVT_PROCESS_KILLED = 8
 EVT_AGGREGATED = 9
 EVT_BEACON_DETECTED = 10
+EVT_HEARTBEAT = 11
 
 # Command Types
 CMD_KILL_PID = 1
@@ -85,6 +86,7 @@ MODE_LEARNING = 2    # Collect everything for AI training
 
 # Current mode (can be changed via UI)
 CURRENT_MODE = MODE_SMART
+LAST_SENSOR_HEARTBEAT = time.monotonic()
 
 # Visualization Config
 MAX_NODES = 500
@@ -111,13 +113,14 @@ from event_filter import EventFilter
 class AIObserver:
     """Machine learning for baseline and anomaly detection"""
     
-    def __init__(self):
+    def __init__(self, database=None):
         self.is_trained = False
         self.is_training = False
         self.training_data = []
         self.scaler = StandardScaler()
         self.models = {}
         self.baseline_stats = {}
+        self.database = database
         
         if ML_AVAILABLE:
             self.models['isolation_forest'] = IsolationForest(
@@ -152,6 +155,7 @@ class AIObserver:
     def finish_training(self):
         """Train models on collected data"""
         global AI_TRAINING_MODE, AI_ENABLED
+        start_time = time.time()
         
         if len(self.training_data) < AI_TRAINING_SAMPLES:
             print(f"[AI] Not enough samples ({len(self.training_data)}/{AI_TRAINING_SAMPLES})")
@@ -166,9 +170,19 @@ class AIObserver:
         X_scaled = self.scaler.fit_transform(X)
         
         # Train models
+        iso_anoms = 0
+        svm_anoms = 0
         if ML_AVAILABLE:
             self.models['isolation_forest'].fit(X_scaled)
             self.models['one_class_svm'].fit(X_scaled)
+            
+            try:
+                iso_preds = self.models['isolation_forest'].predict(X_scaled)
+                svm_preds = self.models['one_class_svm'].predict(X_scaled)
+                iso_anoms = int(np.sum(iso_preds == -1))
+                svm_anoms = int(np.sum(svm_preds == -1))
+            except Exception:
+                pass
         
         # Calculate baseline statistics
         self.baseline_stats = {
@@ -185,6 +199,27 @@ class AIObserver:
         
         # Save models
         self._save_models()
+        
+        # Save training session to database
+        if self.database:
+            try:
+                log_entry = {
+                    'timestamp': int(time.time() * 1000),
+                    'samples_count': len(self.training_data),
+                    'features_count': int(X.shape[1]),
+                    'training_duration': float(time.time() - start_time),
+                    'iso_forest_anomalies': iso_anoms,
+                    'svm_anomalies': svm_anoms,
+                    'status': 'SUCCESS',
+                    'model_metadata': {
+                        'baseline_stats': self.baseline_stats,
+                        'n_estimators': 100,
+                        'nu': 0.1
+                    }
+                }
+                self.database.insert_ai_training_log(log_entry)
+            except Exception as dbe:
+                print(f"[AI] Failed to save training log to database: {dbe}")
         
         print("[AI] [PASS] Training complete! AI detection enabled.")
         print(f"[AI] Baseline: {self.baseline_stats}")
@@ -285,13 +320,15 @@ class AIObserver:
             
             scaler = data['scaler']
             
-            # Verify feature dimension shape to self-heal shape mismatch
-            if hasattr(scaler, 'n_features_in_') and scaler.n_features_in_ != 19:
-                raise ValueError(f"Feature dimension mismatch: expected 19, found {scaler.n_features_in_}")
+            # Verify feature dimension shape dynamically to self-heal shape mismatch
+            expected_dim = len(self._extract_feature_vector({}))
+            if hasattr(scaler, 'n_features_in_') and scaler.n_features_in_ != expected_dim:
+                raise ValueError(f"Feature dimension mismatch: expected {expected_dim}, found {scaler.n_features_in_}")
                 
             self.scaler = scaler
             self.models = data['models']
             self.baseline_stats = data['baseline_stats']
+            self.training_data = data.get('training_data', [])
             self.is_trained = True
             
             global AI_ENABLED
@@ -301,10 +338,59 @@ class AIObserver:
             print(f"[AI] Baseline: {self.baseline_stats}")
             return True
         except Exception as e:
-            print(f"[AI] Failed to load models (possibly due to feature dimension upgrades): {e}")
-            print(f"[AI] Resetting and disabling until a new baseline is trained.")
+            print(f"[AI] Failed to load models: {e}. Attempting self-healing by triggering automatic refitting...")
+            try:
+                # Self-heal using persisted training data in pickled file
+                if 'data' in locals() and 'training_data' in data and len(data['training_data']) >= AI_TRAINING_SAMPLES:
+                    print(f"[AI] Found {len(data['training_data'])} persisted training samples. Re-training models...")
+                    self.training_data = data['training_data']
+                    if self.finish_training():
+                        print(f"[AI] [PASS] Self-healing complete. Models refitted successfully.")
+                        return True
+            except Exception as she:
+                print(f"[AI] Self-healing re-train failed: {she}")
+                
             self.is_trained = False
             return False
+
+    def add_feedback(self, process_node, is_anomaly: bool):
+        """Register manual analyst feedback to refit AI model online"""
+        if not self.is_trained or not ML_AVAILABLE:
+            return
+            
+        try:
+            # Extract features from the active process node
+            features = {
+                'file_writes': getattr(process_node, 'file_writes', 0),
+                'registry_writes': getattr(process_node, 'registry_writes', 0),
+                'network_connections': getattr(process_node, 'network_connections', 0),
+                'child_count': getattr(process_node, 'child_count', 0),
+                'threat_level': getattr(process_node, 'threat_level', 0),
+                'is_signed': getattr(process_node, 'is_signed', True),
+                'tags': getattr(process_node, 'tags', []),
+                'tree_depth': getattr(process_node, 'tree_depth', 0),
+                'suspicious_parent': 1 if getattr(process_node, 'suspicious_parent', False) else 0,
+                'lineage_score': getattr(process_node, 'lineage_score', 0.0)
+            }
+            
+            # Append features to our training set
+            self.training_data.append(features)
+            
+            # Keep baseline size bound by removing oldest if it grows too large (e.g. > 5000)
+            if len(self.training_data) > 5000:
+                self.training_data.pop(0)
+                
+            # Perform quick online model refit
+            X = self._extract_feature_matrix(self.training_data)
+            self.scaler.fit(X)
+            X_scaled = self.scaler.transform(X)
+            
+            self.models['isolation_forest'].fit(X_scaled)
+            self.models['one_class_svm'].fit(X_scaled)
+            self._save_models()
+            print(f"[AI] [FEEDBACK] Refitted models with manual feedback from process: {getattr(process_node, 'name', 'unknown')}")
+        except Exception as e:
+            print(f"[AI] Failed to add manual feedback: {e}")
 
 # ================================================================
 # PROTOCOL HANDLERS
@@ -336,6 +422,8 @@ def parse_binary_event(data):
         return None
 
 def pipe_reader_thread(graph, event_queue):
+    global LAST_SENSOR_HEARTBEAT
+    buffer = b''
     while True:
         print(f"[*] Connecting to Data Pipe: {PIPE_DATA_NAME}")
         pipe = None
@@ -351,7 +439,6 @@ def pipe_reader_thread(graph, event_queue):
                     print(f"[!] Still waiting for C++ (attempt {retry_count})... Is SysOptimaSentinel.exe running?")
                 time.sleep(1)
         
-        buffer = b''
         while True:
             try:
                 hr, data = win32file.ReadFile(pipe, 4096)
@@ -361,7 +448,12 @@ def pipe_reader_thread(graph, event_queue):
                     buffer = buffer[BINARY_EVENT_SIZE:]
                     evt = parse_binary_event(event_data)
                     if evt:
-                        event_queue.put(evt)
+                        LAST_SENSOR_HEARTBEAT = time.monotonic()
+                        if evt['event_type'] == EVT_HEARTBEAT:
+                            # Heartbeat received - don't queue it
+                            pass
+                        else:
+                            event_queue.put(evt)
             except win32file.error as e:
                 print(f"[!] Data pipe disconnected: {e}. Reconnecting...")
                 break
@@ -406,7 +498,7 @@ def pipe_writer_thread(command_queue):
                 pass
         time.sleep(1)
 
-def event_processor_thread(graph, event_queue):
+def event_processor_thread(graph, event_queue, memory_scanner=None):
     last_prune = time.monotonic()
     event_filter = EventFilter(window_seconds=2.0)
 
@@ -420,6 +512,18 @@ def event_processor_thread(graph, event_queue):
                 if 'origin_tag' in event:
                     event['origin'] = event.pop('origin_tag')
                 graph.add_process(**event)
+                
+                # Targeted memory scan on startup to prevent periodic sweep latency
+                if e_type == EVT_PROCESS_START and memory_scanner:
+                    pid = event.get('pid')
+                    name = event.get('name')
+                    full_path = event.get('full_path')
+                    if pid and name:
+                        threading.Thread(
+                            target=memory_scanner.scan_process,
+                            args=(pid, name, full_path or ''),
+                            daemon=True
+                        ).start()
             elif e_type == EVT_FILE_WRITE:
                 if event_filter.should_allow(event['pid'], 'FILE_WRITE', event['full_path']):
                     graph.add_file_write(event['pid'], event['full_path'], event['timestamp'])
@@ -441,6 +545,7 @@ def event_processor_thread(graph, event_queue):
                 graph.remove_active_pid(event['pid'])
             if time.monotonic() - last_prune > 60:  # Every 60 seconds
                 graph.prune_old_nodes()  # <--- THIS FREES THE PYTHON RAM
+                event_filter.prune_expired()  # Prune event deduplication cache
                 last_prune = time.monotonic()
         except queue.Empty:
             continue
@@ -708,7 +813,7 @@ def main():
     print("-" * 70)
     
     try:
-        ai_observer = AIObserver()
+        ai_observer = AIObserver(database)
         
         # Configure from config
         ai_observer.training_samples_required = config.get('ai.training_samples_required', 1000)
@@ -740,7 +845,7 @@ def main():
     
     except Exception as e:
         print(f"[✗] AI initialization failed: {e}")
-        ai_observer = AIObserver()  # Create empty one
+        ai_observer = AIObserver(database)  # Create empty one
     
     print()
     
@@ -960,6 +1065,23 @@ def main():
     print("-" * 70)
     
     try:
+        # Sensor heartbeat watchdog thread
+        def sensor_watchdog():
+            global LAST_SENSOR_HEARTBEAT
+            time.sleep(10)  # Grace period for startup connection
+            while True:
+                elapsed = time.monotonic() - LAST_SENSOR_HEARTBEAT
+                if elapsed > 15:
+                    print(f"[ALERT] Sentinel Sensor Offline! Telemetry connection interrupted (last seen {elapsed:.1f}s ago).")
+                time.sleep(5)
+
+        threading.Thread(
+            target=sensor_watchdog,
+            daemon=True,
+            name="SensorWatchdog"
+        ).start()
+        print("    [✓] Sensor heartbeat watchdog thread started")
+
         # Named pipe communication threads
         print("[*] Starting named pipe threads...")
         threading.Thread(
@@ -982,7 +1104,7 @@ def main():
         print("[*] Starting event processor...")
         threading.Thread(
             target=event_processor_thread, 
-            args=(threat_graph, evt_queue), 
+            args=(threat_graph, evt_queue, memory_scanner), 
             daemon=True,
             name="EventProcessor"
         ).start()

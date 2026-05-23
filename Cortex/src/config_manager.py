@@ -184,6 +184,9 @@ class ConfigManager:
         try:
             for key in keys:
                 value = value[key]
+            # Dynamically expand environment variables if value is a string
+            if isinstance(value, str):
+                value = os.path.expandvars(value)
             return value
         except (KeyError, TypeError):
             return default

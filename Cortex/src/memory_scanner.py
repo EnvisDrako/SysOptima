@@ -130,6 +130,15 @@ class MemoryScanner:
         if self.scan_thread:
             self.scan_thread.join(timeout=5)
         print("[MEMORY] Scanner stopped")
+        
+    def scan_process(self, pid: int, name: str, exe_path: str):
+        """Trigger a targeted memory scan for a single process (typically on startup)"""
+        if self._should_skip_process(pid, name, exe_path):
+            return
+            
+        findings = self._scan_process_memory(pid, name, exe_path)
+        if findings:
+            self._handle_suspicious_memory(pid, name, exe_path, findings)
     
     def _scan_loop(self):
         """Main scanning loop"""
@@ -304,6 +313,10 @@ class MemoryScanner:
     def _is_suspicious_memory(self, mbi, h_process, address) -> bool:
         """Check if memory region is suspicious"""
         
+        # Only scan committed memory pages. Skip MEM_FREE and MEM_RESERVE completely.
+        if getattr(mbi, 'State', 0) != win32con.MEM_COMMIT:
+            return False
+            
         # Check for RWX (Read-Write-Execute) memory
         if (mbi.Protect & win32con.PAGE_EXECUTE_READWRITE) or \
            (mbi.Protect & win32con.PAGE_EXECUTE_WRITECOPY):
