@@ -34,7 +34,8 @@
     "execution_timeout_seconds": 10,
     "max_concurrent": 3,
     "auto_label_enabled": true,
-    "vm_integration_enabled": false
+    "vm_integration_enabled": false,
+    "allow_local_fallback": true
   },
   "ui": {
     "dashboard_port": 8050,

@@ -924,7 +924,8 @@ def main():
     try:
         memory_scanner = MemoryScanner(
             trust_engine=threat_graph.trust_engine,
-            config_manager=config
+            config_manager=config,
+            event_queue=evt_queue
         )
         
         # Start scanning if enabled

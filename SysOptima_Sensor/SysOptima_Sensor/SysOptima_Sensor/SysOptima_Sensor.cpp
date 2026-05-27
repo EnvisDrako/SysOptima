@@ -352,8 +352,24 @@ public:
         };
         intel_engine->AddMaliciousIPs(bad_ips);
 
+        // Pre-populate known malware hashes for local testing/offline detection
+        vector<string> bad_hashes = {
+            "5e883e29a080e6080abb4065527fa3fc14c7b275f382a52b2265972c4cd75f12", // Standard test sha256
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // Empty file sha256
+            "2b069d6e84dbcd974052f5596db3cc7582d9213cb58869ff32ab3d90a6e3e5cf", // EICAR standard test string sha256
+            "44d88612fea8a8f36de82e1278abb02f06d86a8777d140b93ca65d95d7cf1d01", // WannaCry PE hash
+            "20677c7f53f95e263229b13998f80456106606a20d43f07a72d3e91129b87a8e"  // LockBit ransomware PE hash
+        };
+        for (const auto& hash : bad_hashes) {
+            intel_engine->AddMalwareHash(hash, "Ransomware.LockBit");
+        }
+
+        // Persist default threats to local file cache automatically on startup
+        intel_engine->SaveToCache();
+
         wcout << L"[INTEL] Loaded " << intel_engine->GetMaliciousIPCount()
-            << L" threat indicators" << endl;
+            << L" IPs and " << intel_engine->GetMalwareHashCount()
+            << L" malware hashes into offline cache." << endl;
     }
 
     bool IsMalwareHash(const string& hash) {
@@ -1577,6 +1593,28 @@ void OnFileWrite(const EVENT_RECORD& record, const trace_context& trace_context)
         g_graph->IncrementFileWrites(pid);
         g_graph->AddFileModified(pid, filename);
 
+        // Pack and send real-time event to Python Cortex
+        BinaryEvent evt = {};
+        evt.event_type = EVT_FILE_WRITE;
+        evt.timestamp = GetCurrentTimestamp();
+        evt.pid = pid;
+        evt.threat_level = 0;
+
+        ProcessInfo* proc = g_graph->GetProcess(pid);
+        if (proc) {
+            evt.ppid = proc->parent_uid.pid;
+            evt.is_signed = proc->is_signed;
+            strncpy_s(evt.name, WideToUtf8(proc->name).c_str(), 255);
+            strncpy_s(evt.full_path, WideToUtf8(proc->full_path).c_str(), 511);
+            strncpy_s(evt.origin_tag, proc->origin_tag.c_str(), 31);
+        } else {
+            evt.ppid = 0;
+            evt.is_signed = 0;
+            strncpy_s(evt.name, "Unknown", 255);
+        }
+
+        strncpy_s(evt.extra_data, WideToUtf8(filename).c_str(), 255);
+        SendEventDirect(evt);
     }
     catch (...) {}
 }
@@ -1599,6 +1637,28 @@ void OnRegistrySet(const EVENT_RECORD& record, const trace_context& trace_contex
             g_graph->AddTag(pid, "TAG_PERSISTENCE");
         }
 
+        // Pack and send real-time event to Python Cortex
+        BinaryEvent evt = {};
+        evt.event_type = EVT_REGISTRY_SET;
+        evt.timestamp = GetCurrentTimestamp();
+        evt.pid = pid;
+        evt.threat_level = 0;
+
+        ProcessInfo* proc = g_graph->GetProcess(pid);
+        if (proc) {
+            evt.ppid = proc->parent_uid.pid;
+            evt.is_signed = proc->is_signed;
+            strncpy_s(evt.name, WideToUtf8(proc->name).c_str(), 255);
+            strncpy_s(evt.full_path, WideToUtf8(proc->full_path).c_str(), 511);
+            strncpy_s(evt.origin_tag, proc->origin_tag.c_str(), 31);
+        } else {
+            evt.ppid = 0;
+            evt.is_signed = 0;
+            strncpy_s(evt.name, "Unknown", 255);
+        }
+
+        strncpy_s(evt.extra_data, WideToUtf8(key_name).c_str(), 255);
+        SendEventDirect(evt);
     }
     catch (...) {}
 }
@@ -1644,6 +1704,30 @@ void OnNetworkConnect(const EVENT_RECORD& record, const trace_context& trace_con
             evt.threat_level = 2;
             strncpy_s(evt.extra_data, dest_ip.c_str(), 255);
             strncpy_s(evt.origin_tag, "ThreatIntel", 31);
+            SendEventDirect(evt);
+        }
+        else {
+            // Pack and send standard real-time network connection event to Python
+            BinaryEvent evt = {};
+            evt.event_type = EVT_NETWORK_CONNECT;
+            evt.timestamp = GetCurrentTimestamp();
+            evt.pid = pid;
+            evt.threat_level = 0;
+
+            ProcessInfo* proc = g_graph->GetProcess(pid);
+            if (proc) {
+                evt.ppid = proc->parent_uid.pid;
+                evt.is_signed = proc->is_signed;
+                strncpy_s(evt.name, WideToUtf8(proc->name).c_str(), 255);
+                strncpy_s(evt.full_path, WideToUtf8(proc->full_path).c_str(), 511);
+                strncpy_s(evt.origin_tag, proc->origin_tag.c_str(), 31);
+            } else {
+                evt.ppid = 0;
+                evt.is_signed = 0;
+                strncpy_s(evt.name, "Unknown", 255);
+            }
+
+            strncpy_s(evt.extra_data, dest_ip.c_str(), 255);
             SendEventDirect(evt);
         }
 
