@@ -1848,7 +1848,7 @@ int main() {
     KillOtherInstances();
     // 2. Python cleanup is now handled by start_sysoptima.ps1 bootstrapper
     // to prevent WMI deadlocks inside the C++ sensor.
-    wcout << L"    [✓] Sensor workspace prepared." << endl;
+    wcout << L"    [+] Sensor workspace prepared." << endl;
     wcout << endl;
 
     const wchar_t* mode_names[] = { L"PRODUCTION", L"SMART", L"LEARNING" };
