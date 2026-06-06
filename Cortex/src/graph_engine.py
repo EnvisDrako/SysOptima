@@ -557,6 +557,13 @@ class ThreatGraph:
                 
                 if current_threat < 2:
                     new_threat = min(current_threat + 1, 2)
+                    
+                    # Trust overrides for memory alerts
+                    if trust_score >= 100:
+                        new_threat = 0
+                    elif trust_score >= 40:
+                        new_threat = min(new_threat, 1)
+                        
                     self.G.nodes[proc_node]['threat'] = new_threat
                     
                     if self.response_orchestrator:
@@ -669,18 +676,6 @@ class ThreatGraph:
         with self.lock:
             G_copy = self.G.copy()
             
-            # FILTER: Remove safe processes in SMART/PRODUCTION mode
-            mode = self.config.get_mode() if self.config else 'SMART'
-            
-            if mode in ['SMART', 'PRODUCTION']:
-                safe_nodes = [
-                    n for n in G_copy.nodes() 
-                    if G_copy.nodes[n].get('threat', 0) == 0 
-                    and G_copy.nodes[n].get('node_type') == 'process'
-                ]
-                G_copy.remove_nodes_from(safe_nodes)
-                print(f"[GRAPH] Filtered {len(safe_nodes)} safe processes from visualization")
-            
             # Limit total nodes
             if G_copy.number_of_nodes() > MAX_NODES:
                 nodes = sorted(
@@ -691,6 +686,27 @@ class ThreatGraph:
                 G_copy.remove_nodes_from(nodes[MAX_NODES:])
             
             return G_copy, dict(self.stats), list(self.threat_history), list(self.pattern_matches)    
+            
+    def get_all_processes(self) -> List[Dict]:
+        """Return a flat list of all active process nodes with their stats"""
+        with self.lock:
+            processes = []
+            for n in self.G.nodes():
+                node_data = self.G.nodes[n]
+                if node_data.get('node_type') == 'process':
+                    processes.append({
+                        'id': n,
+                        'pid': node_data.get('pid'),
+                        'ppid': node_data.get('ppid'),
+                        'label': node_data.get('label'),
+                        'origin': node_data.get('origin'),
+                        'threat': node_data.get('threat', 0),
+                        'trust': node_data.get('trust_score', 0),
+                        'is_signed': node_data.get('is_signed', True),
+                        'full_path': node_data.get('full_path', ''),
+                        'timestamp': node_data.get('timestamp')
+                    })
+            return processes
     
     def query_by_behavior(self, pattern: str) -> List[str]:
         """Find all processes matching behavior pattern"""
