@@ -64,6 +64,46 @@ WINTRUST_ACTION_GENERIC_VERIFY_V2 = GUID(
     (ctypes.c_byte * 8)(0x8c, 0xc2, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee)
 )
 
+IS_64BIT = struct.calcsize("P") == 8
+
+if IS_64BIT:
+    class MEMORY_BASIC_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("BaseAddress", ctypes.c_void_p),
+            ("AllocationBase", ctypes.c_void_p),
+            ("AllocationProtect", ctypes.c_ulong),
+            ("__alignment1", ctypes.c_ulong),
+            ("RegionSize", ctypes.c_size_t),
+            ("State", ctypes.c_ulong),
+            ("Protect", ctypes.c_ulong),
+            ("Type", ctypes.c_ulong),
+            ("__alignment2", ctypes.c_ulong),
+        ]
+else:
+    class MEMORY_BASIC_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("BaseAddress", ctypes.c_void_p),
+            ("AllocationBase", ctypes.c_void_p),
+            ("AllocationProtect", ctypes.c_ulong),
+            ("RegionSize", ctypes.c_size_t),
+            ("State", ctypes.c_ulong),
+            ("Protect", ctypes.c_ulong),
+            ("Type", ctypes.c_ulong),
+        ]
+
+# Pre-load kernel32 for memory scanning
+try:
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.VirtualQueryEx.argtypes = [
+        wintypes.HANDLE, 
+        wintypes.LPCVOID, 
+        ctypes.POINTER(MEMORY_BASIC_INFORMATION), 
+        ctypes.c_size_t
+    ]
+    kernel32.VirtualQueryEx.restype = ctypes.c_size_t
+except Exception:
+    kernel32 = None
+
 class MemoryScanner:
     """Trust-aware memory scanner that prevents false positives"""
     
@@ -279,25 +319,34 @@ class MemoryScanner:
         try:
             import win32process
             
-            # Get memory info across 64-bit user space range
+            if not kernel32:
+                print(f"[MEMORY] Memory analysis error: kernel32 not loaded")
+                return findings
+                
+            # Get memory info across user space range
             address = 0
             consecutive_failures = 0
             while address < 0x7FFFFFFFFFFF:  # 64-bit Windows user space limit
                 try:
-                    mbi = win32process.VirtualQueryEx(h_process, address)
+                    mbi = MEMORY_BASIC_INFORMATION()
+                    # h_process parameter in python win32api OpenProcess is a PyHANDLE.
+                    # We can pass its integer value using int()
+                    res = kernel32.VirtualQueryEx(int(h_process), ctypes.c_void_p(address), ctypes.byref(mbi), ctypes.sizeof(mbi))
                     consecutive_failures = 0
                     
-                    if not mbi or mbi.RegionSize <= 0:
+                    if res == 0 or mbi.RegionSize <= 0:
                         break
                     
+                    base_address = mbi.BaseAddress or 0
+                    
                     # Check for suspicious memory patterns
-                    if self._is_suspicious_memory(mbi, h_process, address):
-                        finding = self._analyze_memory_region(mbi, h_process, address, pid, name)
+                    if self._is_suspicious_memory(mbi, h_process, base_address):
+                        finding = self._analyze_memory_region(mbi, h_process, base_address, pid, name)
                         if finding:
                             findings.append(finding)
                     
                     # Move to next region
-                    address = mbi.BaseAddress + mbi.RegionSize
+                    address = base_address + mbi.RegionSize
                     
                 except Exception:
                     consecutive_failures += 1
