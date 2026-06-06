@@ -185,8 +185,7 @@ window.loadTaskGrid = async function() {
 };
 
 window.loadQuarantineGrid = async function() {
-    const response = await fetch('/api/quarantine/list');
-    const data = await response.json();
+    const data = await api.fetchQuarantineList();
     const tbody = document.querySelector('#quarantine-grid-table tbody');
     tbody.innerHTML = '';
     
@@ -218,8 +217,7 @@ window.loadQuarantineGrid = async function() {
 };
 
 window.loadDetonationGrid = async function() {
-    const response = await fetch('/api/malware/executions');
-    const data = await response.json();
+    const data = await api.fetchMalwareExecutions();
     const tbody = document.querySelector('#detonation-grid-table tbody');
     tbody.innerHTML = '';
     
@@ -324,6 +322,28 @@ window.switchModalTab = function(tabId) {
     document.getElementById(`modal-tab-btn-${tabId}`).classList.add('active');
     document.querySelectorAll('.modal-tab-content-pane').forEach(pane => pane.classList.remove('active'));
     document.getElementById(`modal-content-${tabId}`).classList.add('active');
+    
+    if (tabId === 'lineage' && selectedNodePid) {
+        window.loadLineageTree(selectedNodePid);
+    }
+};
+
+window.loadLineageTree = async function(pid) {
+    const container = document.getElementById('lineage-graph-container');
+    if (!container) return;
+    container.innerHTML = '<div style="color: #64748b; padding: 1.5rem; text-align: center;">Loading lineage tree...</div>';
+    
+    try {
+        const lineageData = await api.fetchProcessLineage(pid);
+        if (lineageData.error) {
+            container.innerHTML = `<div style="color: #ef4444; padding: 1.5rem; text-align: center;">Error: ${lineageData.error}</div>`;
+            return;
+        }
+        container.innerHTML = '';
+        graph.renderLineageGraph('lineage-graph-container', lineageData);
+    } catch (e) {
+        container.innerHTML = `<div style="color: #ef4444; padding: 1.5rem; text-align: center;">Error loading lineage: ${e.message || e}</div>`;
+    }
 };
 
 // Map actions to global window object
@@ -382,8 +402,7 @@ window.toggleNetworkIsolation = async function() {
     const btn = document.getElementById('btn-isolate-network');
     btn.textContent = '⏳ Processing...';
     try {
-        const res = await fetch(isIso ? `/api/action/restore_network/${selectedNodePid}` : `/api/action/isolate_network/${selectedNodePid}`, { method: 'POST' });
-        const data = await res.json();
+        const data = isIso ? await api.restoreNetwork(selectedNodePid) : await api.isolateNetwork(selectedNodePid);
         if(data.status === 'success') {
             if(isIso) isolatedPids.delete(selectedNodePid); else isolatedPids.add(selectedNodePid);
             btn.textContent = isIso ? '🔒 Isolate Network' : '🔓 Restore Network';
@@ -396,8 +415,7 @@ window.dumpProcessMemory = async function() {
     if (!selectedNodePid) return;
     if (!confirm(`Dump memory for PID ${selectedNodePid}?`)) return;
     try {
-        const res = await fetch(`/api/action/dump_memory/${selectedNodePid}`, { method: 'POST' });
-        const data = await res.json();
+        const data = await api.dumpMemory(selectedNodePid);
         if (data.status === 'success') { alert('Dump success!'); window.open(data.download_url, '_blank'); }
         else alert('Dump failed: ' + data.error);
     } catch(e) { alert('Error: ' + e); }
@@ -406,32 +424,31 @@ window.dumpProcessMemory = async function() {
 // Global Quarantine/Sandbox exports
 window.restoreQuarantinedFile = async (id) => {
     if(confirm('Restore file?')) {
-        const r = await fetch(`/api/quarantine/${id}/restore`, {method: 'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-        if ((await r.json()).success) window.loadQuarantineGrid(); else alert('Failed');
+        const data = await api.restoreQuarantinedFile(id);
+        if (data.success) window.loadQuarantineGrid(); else alert('Failed');
     }
 };
 window.deleteQuarantinedFile = async (id) => {
     if(confirm('Shred file?')) {
-        const r = await fetch(`/api/quarantine/${id}/delete`, {method: 'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({reason:'Operator requested'})});
-        if ((await r.json()).success) window.loadQuarantineGrid(); else alert('Failed');
+        const data = await api.deleteQuarantinedFile(id);
+        if (data.success) window.loadQuarantineGrid(); else alert('Failed');
     }
 };
 window.launchSandboxSample = async () => {
     const p = document.getElementById('sandbox-sample-path').value.trim();
     if(!p) return alert('Path required');
-    const r = await fetch('/api/malware/launch', {method: 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sample_path: p, execution_params: {timeout: 10, use_sandbox: document.getElementById('sandbox-isolation').value === 'sandbox'}})});
-    if((await r.json()).success) window.loadDetonationGrid(); else alert('Failed');
+    const data = await api.launchSandboxSample(p, document.getElementById('sandbox-isolation').value === 'sandbox');
+    if(data.success) window.loadDetonationGrid(); else alert('Failed');
 };
 window.stopDetonation = async (id) => {
     if(confirm('Stop sandbox?')) {
-        await fetch(`/api/malware/execution/${id}/stop`, {method: 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({reason: 'Operator requested'})});
+        await api.stopDetonation(id);
         window.loadDetonationGrid();
     }
 };
 window.viewDetonationResults = async (id) => {
     try {
-        const r = await fetch(`/api/malware/execution/${id}/results`);
-        const d = await r.json();
+        const d = await api.viewDetonationResults(id);
         alert(`Status: ${d.status}\nDuration: ${d.duration}s\nTags: ${d.behavior_tags}`);
     } catch(e) { alert('Error: ' + e); }
 };
