@@ -1,22 +1,31 @@
-/* SysOptima Dashboard - Dark Theme */
+/* SysOptima Dashboard - Enterprise UI Theme */
 
 :root {
-    --bg-primary: #0a0e27;
-    --bg-secondary: #141b2d;
-    --bg-tertiary: #1a2238;
-    --border-color: #2d3748;
+    /* Premium Dark Theme Core */
+    --bg-primary: #050814;
+    --bg-secondary: rgba(13, 17, 33, 0.75);
+    --bg-tertiary: rgba(22, 28, 52, 0.65);
+    --border-color: rgba(255, 255, 255, 0.08);
+    --border-highlight: rgba(6, 182, 212, 0.3);
     
-    --text-primary: #e2e8f0;
-    --text-secondary: #a0aec0;
-    --text-muted: #718096;
+    /* Text */
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
     
-    --color-safe: #2ecc71;
-    --color-suspicious: #f39c12;
-    --color-critical: #e74c3c;
-    --color-ai: #9b59b6;
+    /* Status Colors - Tailored HSL for vibrancy */
+    --color-safe: #10b981;
+    --color-suspicious: #f59e0b;
+    --color-critical: #ef4444;
+    --color-ai: #8b5cf6;
     
-    --accent-blue: #3498db;
+    /* Accents */
+    --accent-blue: #0ea5e9;
     --accent-purple: #8b5cf6;
+    
+    /* Font Stacks */
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-heading: 'Outfit', var(--font-sans);
 }
 
 * {
@@ -26,29 +35,40 @@
 }
 
 body {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg-primary);
+    font-family: var(--font-sans);
+    background: radial-gradient(circle at 10% 20%, #0a0f25 0%, var(--bg-primary) 100%);
+    background-attachment: fixed;
     color: var(--text-primary);
     overflow: hidden;
+    -webkit-font-smoothing: antialiased;
 }
 
-/* Header */
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+}
+
 .dashboard-header {
-    background: var(--bg-secondary);
-    border-bottom: 2px solid var(--border-color);
+    background: rgba(8, 12, 23, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border-color);
     padding: 1rem 2rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    z-index: 100;
 }
 
 .logo h1 {
-    font-size: 1.5rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+    font-size: 1.6rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #0ea5e9, #c084fc);
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    letter-spacing: -0.03em;
 }
 
 .status-bar {
@@ -82,9 +102,13 @@ body {
 
 .panel {
     background: var(--bg-secondary);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: 16px;
     overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .panel-header {
@@ -107,8 +131,8 @@ body {
 
 #graph-container {
     width: 100%;
-    height: calc(100% - 100px);
-    background: #000000;
+    height: calc(100% - 90px);
+    background: transparent;
 }
 
 .graph-controls {
