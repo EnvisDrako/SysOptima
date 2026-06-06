@@ -1,6 +1,4 @@
 // ================================================================
-// SYSOPTIMA COMPLETE C++ ENGINE - PRODUCTION READY
-// No further C++ changes needed after this
 // ================================================================
 #ifndef WINVER
 #define WINVER 0x0A00
