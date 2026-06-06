@@ -159,8 +159,8 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
             name: 'cose',
             animate: true,
             animationDuration: 1000,
-            nodeRepulsion: 8000,
-            idealEdgeLength: 100,
+            nodeRepulsion: 12000,
+            idealEdgeLength: 120,
             edgeElasticity: 100,
             gravity: 0.1
         },
@@ -204,6 +204,8 @@ export function updateGraph(data, filterThreatsOnly) {
         nodeData.opacity = Math.max(0.3, 1 - (age / fadeTime));
     });
     
+    let needsLayout = false;
+    
     // Add/update nodes efficiently
     nodes.forEach(nodeData => {
         const existingNode = cy.getElementById(nodeData.id);
@@ -216,6 +218,7 @@ export function updateGraph(data, filterThreatsOnly) {
                 data: nodeData,
                 style: { opacity: nodeData.opacity }
             });
+            needsLayout = true;
         }
     });
     
@@ -227,6 +230,7 @@ export function updateGraph(data, filterThreatsOnly) {
         const edgeId = `${edge.data('source')}-${edge.data('target')}`;
         if (!currentEdgeIds.includes(edgeId)) {
             edge.remove();
+            needsLayout = true;
         }
     });
     
@@ -237,16 +241,19 @@ export function updateGraph(data, filterThreatsOnly) {
                 group: 'edges',
                 data: edgeData
             });
+            needsLayout = true;
         }
     });
     
-    // Random occasional layout run
-    if (Math.random() < 0.1) {
+    // Run layout on additions or removals
+    if (needsLayout) {
         cy.layout({
             name: 'cose',
             animate: true,
             animationDuration: 500,
-            randomize: false
+            randomize: false,
+            nodeRepulsion: 12000,
+            idealEdgeLength: 120
         }).run();
     }
 }
@@ -294,4 +301,157 @@ export function fitGraph() {
         cy.fit();
         cy.zoom(1);
     }
+}
+
+export let lineageCy = null;
+
+export function renderLineageGraph(containerId, lineageData) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    // Clean up previous lineage cy instance
+    if (lineageCy) {
+        lineageCy.destroy();
+    }
+    
+    const elements = [];
+    
+    // Add ancestors
+    const ancestors = lineageData.ancestors || [];
+    ancestors.forEach(a => {
+        elements.push({
+            group: 'nodes',
+            data: {
+                id: a.id,
+                label: `${a.label} (${a.pid})`,
+                threat: a.threat,
+                type: 'process',
+                is_signed: a.is_signed
+            }
+        });
+    });
+    
+    // Add descendants
+    const descendants = lineageData.descendants || [];
+    descendants.forEach(d => {
+        elements.push({
+            group: 'nodes',
+            data: {
+                id: d.id,
+                label: `${d.label} (${d.pid})`,
+                threat: d.threat,
+                type: 'process',
+                is_signed: d.is_signed
+            }
+        });
+    });
+    
+    // Add target process itself
+    const target = lineageData.process;
+    if (target) {
+        elements.push({
+            group: 'nodes',
+            data: {
+                id: target.id,
+                label: `${target.label} (${target.pid})`,
+                threat: target.threat,
+                type: 'process',
+                is_signed: target.is_signed
+            }
+        });
+    }
+    
+    // Build parent-child connections
+    const allNodes = [target, ...ancestors, ...descendants].filter(Boolean);
+    const nodeIds = new Set(allNodes.map(n => n.id));
+    
+    allNodes.forEach(node => {
+        if (node.ppid) {
+            // Find parent node ID if it's in allNodes
+            const parent = allNodes.find(n => n.pid === node.ppid);
+            if (parent && nodeIds.has(parent.id) && nodeIds.has(node.id)) {
+                elements.push({
+                    group: 'edges',
+                    data: {
+                        id: `${parent.id}-${node.id}`,
+                        source: parent.id,
+                        target: node.id,
+                        relation: 'spawned'
+                    }
+                });
+            }
+        }
+    });
+    
+    lineageCy = cytoscape({
+        container: container,
+        elements: elements,
+        style: [
+            {
+                selector: 'node',
+                style: {
+                    'label': 'data(label)',
+                    'font-size': '10px',
+                    'text-valign': 'center',
+                    'text-halign': 'center',
+                    'color': '#f8fafc',
+                    'text-outline-width': 2,
+                    'text-outline-color': '#050814',
+                    'background-opacity': 0.9
+                }
+            },
+            {
+                selector: 'node[threat = 0]',
+                style: {
+                    'background-color': '#10b981',
+                    'width': 30,
+                    'height': 30
+                }
+            },
+            {
+                selector: 'node[threat = 1]',
+                style: {
+                    'background-color': '#f59e0b',
+                    'width': 40,
+                    'height': 40,
+                    'shape': 'triangle'
+                }
+            },
+            {
+                selector: 'node[threat = 2]',
+                style: {
+                    'background-color': '#ef4444',
+                    'width': 50,
+                    'height': 50,
+                    'shape': 'hexagon',
+                    'border-width': 3,
+                    'border-color': '#b91c1c'
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': 2.5,
+                    'line-color': '#3b82f6',
+                    'target-arrow-color': '#3b82f6',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style': 'bezier'
+                }
+            }
+        ],
+        layout: {
+            name: 'breadthfirst',
+            directed: true,
+            padding: 30,
+            spacingFactor: 1.25,
+            animate: true,
+            animationDuration: 500
+        },
+        wheelSensitivity: 0.2
+    });
+    
+    // Fit graph
+    lineageCy.ready(() => {
+        lineageCy.fit();
+    });
 }
