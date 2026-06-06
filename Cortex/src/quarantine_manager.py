@@ -530,6 +530,31 @@ class QuarantineManager:
         except Exception:
             return None
     
+    def _set_restricted_file_permissions(self, file_path: Path):
+        """Set protected DACL with only SYSTEM and Administrators access, blocking inheritance"""
+        try:
+            dacl = win32security.ACL()
+            
+            # SYSTEM full control
+            system_sid = win32security.LookupAccountName(None, "SYSTEM")[0]
+            dacl.AddAccessAllowedAce(win32security.ACL_REVISION, win32con.GENERIC_ALL, system_sid)
+            
+            # Administrators full control
+            admin_sid = win32security.LookupAccountName(None, "Administrators")[0]
+            dacl.AddAccessAllowedAce(win32security.ACL_REVISION, win32con.GENERIC_ALL, admin_sid)
+            
+            # Create and set protected security descriptor
+            sd = win32security.SECURITY_DESCRIPTOR()
+            sd.Initialize()
+            sd.SetSecurityDescriptorDacl(1, dacl, 0)
+            win32security.SetFileSecurity(
+                str(file_path),
+                win32security.DACL_SECURITY_INFORMATION | win32security.PROTECTED_DACL_SECURITY_INFORMATION,
+                sd
+            )
+        except Exception as e:
+            print(f"[QUARANTINE] Failed to set file permissions: {e}")
+
     def _secure_move_file(self, source: Path, destination: Path):
         """Securely move file (copy + secure delete original)"""
         # Copy file
@@ -538,6 +563,9 @@ class QuarantineManager:
         # Verify copy
         if not destination.exists():
             raise Exception("File copy failed")
+        
+        # Restrict permissions immediately
+        self._set_restricted_file_permissions(destination)
         
         # Secure delete original
         self._secure_delete_file(source)

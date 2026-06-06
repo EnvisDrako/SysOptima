@@ -505,15 +505,8 @@ inline bool ThreatIntelligence::UpdateFromAbuseIPDB() {
         }
     }
     
-    stringstream ss(data);
     string line;
     int added = 0;
-    while (getline(ss, ss.eof() ? '\0' : '\n')) {
-        // Safe line extraction
-        line = ss.str();
-        break; // Let's use standard getline loop instead for robustness
-    }
-    
     stringstream ss2(data);
     while (getline(ss2, line)) {
         line.erase(remove(line.begin(), line.end(), '\r'), line.end());

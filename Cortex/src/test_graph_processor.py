@@ -118,5 +118,42 @@ class TestGraphProcessor(unittest.TestCase):
         
         self.assertTrue(len(cmds) >= 2) # Should include kill pid and kill tree fallback
 
+    def test_pruning_logic(self):
+        """Test event filter prune_expired and graph engine threat vs normal node pruning"""
+        # Test EventFilter manual/periodic pruning
+        filt = EventFilter(window_seconds=1.0)
+        filt.should_allow(1234, 'FILE_WRITE', 'file1')
+        filt.seen_events[(1234, 'FILE_WRITE', 'file1')] = time.monotonic() - 2.0  # Force backdate
+        filt.prune_expired()
+        self.assertEqual(len(filt.seen_events), 0)
+        
+        # Test Graph Engine pruning logic
+        ts = int(time.time() * 1000)
+        
+        # Normal node backdated by 15 minutes (900,000 ms)
+        n1 = self.graph.add_process(400, 0, "normal.exe", "SYSTEM", 0, ts - 900000, True, "normal.exe")
+        
+        # Threat node backdated by 15 minutes (900,000 ms) - should NOT be pruned
+        n2 = self.graph.add_process(500, 0, "threat.exe", "USER", 1, ts - 900000, False, "threat.exe")
+        self.graph.G.nodes[n2]['threat'] = 2
+        
+        # Threat node backdated by 2 hours (7,200,000 ms) - SHOULD be pruned
+        n3 = self.graph.add_process(600, 0, "old_threat.exe", "USER", 1, ts - 7200000, False, "old_threat.exe")
+        self.graph.G.nodes[n3]['threat'] = 2
+        
+        # Make them inactive so they can be pruned
+        self.graph.active_pids.clear()
+        
+        # Run pruning
+        self.graph.prune_old_nodes()
+        
+        # Assertions
+        # Normal node (n1) should be pruned
+        self.assertNotIn(n1, self.graph.G.nodes)
+        # Recent threat node (n2) should NOT be pruned
+        self.assertIn(n2, self.graph.G.nodes)
+        # Old threat node (n3) SHOULD be pruned
+        self.assertNotIn(n3, self.graph.G.nodes)
+
 if __name__ == "__main__":
     unittest.main()

@@ -213,9 +213,10 @@ class TrustEngine:
             import subprocess
             import re
             # Query Authenticode Subject name
+            filepath_escaped = filepath.replace("'", "''")
             cmd = [
                 'powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
-                f"(Get-AuthenticodeSignature '{filepath}').SignerCertificate.Subject"
+                f"(Get-AuthenticodeSignature '{filepath_escaped}').SignerCertificate.Subject"
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=2.0)
             if result.returncode == 0:

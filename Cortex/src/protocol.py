@@ -28,6 +28,7 @@ EVT_NETWORK_CONNECT = 7
 EVT_PROCESS_KILLED = 8
 EVT_AGGREGATED = 9
 EVT_BEACON_DETECTED = 10
+EVT_HEARTBEAT = 11
 
 # Command types. Must match the C++ CommandType enum.
 CMD_KILL_PID = 1
@@ -36,6 +37,7 @@ CMD_KILL_TREE = 3
 CMD_QUARANTINE = 4
 CMD_CLEANUP_PERSISTENCE = 5
 CMD_UPDATE_THREAT_CACHE = 6
+CMD_SET_MODE = 7
 
 
 def _decode_fixed_string(value: bytes) -> str:

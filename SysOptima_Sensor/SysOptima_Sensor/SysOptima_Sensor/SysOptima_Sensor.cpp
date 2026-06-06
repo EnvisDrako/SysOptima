@@ -1,6 +1,4 @@
 // ================================================================
-// SYSOPTIMA COMPLETE C++ ENGINE - PRODUCTION READY
-// No further C++ changes needed after this
 // ================================================================
 #ifndef WINVER
 #define WINVER 0x0A00
@@ -53,7 +51,7 @@ using namespace std::chrono;
 // CONFIGURATION
 // ================================================================
 
-const int MODE = 1;  // 0=Production, 1=Smart, 2=Learning
+int g_mode = 1;  // 0=Production, 1=Smart, 2=Learning
 const int REORDER_BUFFER_MS = 500;
 const int MEMORY_SCAN_INTERVAL_MS = 10000;
 const int AGGREGATION_FLUSH_MS = 100;
@@ -110,7 +108,8 @@ enum EventType {
     EVT_NETWORK_CONNECT = 7,
     EVT_PROCESS_KILLED = 8,
     EVT_AGGREGATED = 9,
-    EVT_BEACON_DETECTED = 10
+    EVT_BEACON_DETECTED = 10,
+    EVT_HEARTBEAT = 11
 };
 
 enum CommandType {
@@ -119,7 +118,8 @@ enum CommandType {
     CMD_KILL_TREE = 3,
     CMD_QUARANTINE = 4,
     CMD_CLEANUP_PERSISTENCE = 5,
-    CMD_UPDATE_THREAT_CACHE = 6
+    CMD_UPDATE_THREAT_CACHE = 6,
+    CMD_SET_MODE = 7
 };
 
 #pragma pack(push, 1)
@@ -350,8 +350,24 @@ public:
         };
         intel_engine->AddMaliciousIPs(bad_ips);
 
+        // Pre-populate known malware hashes for local testing/offline detection
+        vector<string> bad_hashes = {
+            "5e883e29a080e6080abb4065527fa3fc14c7b275f382a52b2265972c4cd75f12", // Standard test sha256
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // Empty file sha256
+            "2b069d6e84dbcd974052f5596db3cc7582d9213cb58869ff32ab3d90a6e3e5cf", // EICAR standard test string sha256
+            "44d88612fea8a8f36de82e1278abb02f06d86a8777d140b93ca65d95d7cf1d01", // WannaCry PE hash
+            "20677c7f53f95e263229b13998f80456106606a20d43f07a72d3e91129b87a8e"  // LockBit ransomware PE hash
+        };
+        for (const auto& hash : bad_hashes) {
+            intel_engine->AddMalwareHash(hash, "Ransomware.LockBit");
+        }
+
+        // Persist default threats to local file cache automatically on startup
+        intel_engine->SaveToCache();
+
         wcout << L"[INTEL] Loaded " << intel_engine->GetMaliciousIPCount()
-            << L" threat indicators" << endl;
+            << L" IPs and " << intel_engine->GetMalwareHashCount()
+            << L" malware hashes into offline cache." << endl;
     }
 
     bool IsMalwareHash(const string& hash) {
@@ -1122,7 +1138,7 @@ void ExecuteHiddenCommand(const wstring& cmd) {
 }
 
 void CleanupMaliciousServices(const wstring& exe_name) {
-    SC_HANDLE hSCM = OpenSCManager(nullptr, nullptr, SC_MANAGER_ENUMERATE_STATUS | SC_MANAGER_CONNECT);
+    SC_HANDLE hSCM = OpenSCManager(nullptr, nullptr, SC_MANAGER_ENUMERATE_SERVICE | SC_MANAGER_CONNECT);
     if (!hSCM) return;
     
     DWORD bytesNeeded = 0;
@@ -1351,6 +1367,17 @@ void CommandListenerThread() {
                 // Python can send threat intel updates
                 g_threat_cache->AddMalwareHash(cmd.param);
                 break;
+            case CMD_SET_MODE:
+                {
+                    g_mode = cmd.target_pid;
+                    const wchar_t* mode_names[] = { L"PRODUCTION", L"SMART", L"LEARNING" };
+                    if (g_mode >= 0 && g_mode <= 2) {
+                        wcout << L"[CONTROL] EDR Mode dynamically updated to: " << mode_names[g_mode] << endl;
+                    } else {
+                        wcout << L"[CONTROL] Received invalid mode code: " << g_mode << endl;
+                    }
+                }
+                break;
             }
         }
         else {
@@ -1510,10 +1537,10 @@ void OnProcessStart(const EVENT_RECORD& record, const trace_context& trace_conte
         int threat = g_graph->CalculateThreatLevel(proc);
 
         bool should_send = false;
-        if (MODE == 2) {
+        if (g_mode == 2) {
             should_send = true;  // Learning mode: send everything
         }
-        else if (MODE == 1) {
+        else if (g_mode == 1) {
             should_send = (threat > 0 || !proc.is_signed || proc.origin_tag == "Internet");
         }
         else {
@@ -1539,7 +1566,7 @@ void OnProcessStart(const EVENT_RECORD& record, const trace_context& trace_conte
 
             SendEventDirect(evt);
 
-            if (MODE >= 1) {
+            if (g_mode >= 1) {
                 wcout << L"[PROC] " << filename << L" (Threat: " << threat << L")" << endl;
             }
         }
@@ -1564,6 +1591,28 @@ void OnFileWrite(const EVENT_RECORD& record, const trace_context& trace_context)
         g_graph->IncrementFileWrites(pid);
         g_graph->AddFileModified(pid, filename);
 
+        // Pack and send real-time event to Python Cortex
+        BinaryEvent evt = {};
+        evt.event_type = EVT_FILE_WRITE;
+        evt.timestamp = GetCurrentTimestamp();
+        evt.pid = pid;
+        evt.threat_level = 0;
+
+        ProcessInfo* proc = g_graph->GetProcess(pid);
+        if (proc) {
+            evt.ppid = proc->parent_uid.pid;
+            evt.is_signed = proc->is_signed;
+            strncpy_s(evt.name, WideToUtf8(proc->name).c_str(), 255);
+            strncpy_s(evt.full_path, WideToUtf8(proc->full_path).c_str(), 511);
+            strncpy_s(evt.origin_tag, proc->origin_tag.c_str(), 31);
+        } else {
+            evt.ppid = 0;
+            evt.is_signed = 0;
+            strncpy_s(evt.name, "Unknown", 255);
+        }
+
+        strncpy_s(evt.extra_data, WideToUtf8(filename).c_str(), 255);
+        SendEventDirect(evt);
     }
     catch (...) {}
 }
@@ -1586,6 +1635,28 @@ void OnRegistrySet(const EVENT_RECORD& record, const trace_context& trace_contex
             g_graph->AddTag(pid, "TAG_PERSISTENCE");
         }
 
+        // Pack and send real-time event to Python Cortex
+        BinaryEvent evt = {};
+        evt.event_type = EVT_REGISTRY_SET;
+        evt.timestamp = GetCurrentTimestamp();
+        evt.pid = pid;
+        evt.threat_level = 0;
+
+        ProcessInfo* proc = g_graph->GetProcess(pid);
+        if (proc) {
+            evt.ppid = proc->parent_uid.pid;
+            evt.is_signed = proc->is_signed;
+            strncpy_s(evt.name, WideToUtf8(proc->name).c_str(), 255);
+            strncpy_s(evt.full_path, WideToUtf8(proc->full_path).c_str(), 511);
+            strncpy_s(evt.origin_tag, proc->origin_tag.c_str(), 31);
+        } else {
+            evt.ppid = 0;
+            evt.is_signed = 0;
+            strncpy_s(evt.name, "Unknown", 255);
+        }
+
+        strncpy_s(evt.extra_data, WideToUtf8(key_name).c_str(), 255);
+        SendEventDirect(evt);
     }
     catch (...) {}
 }
@@ -1633,9 +1704,55 @@ void OnNetworkConnect(const EVENT_RECORD& record, const trace_context& trace_con
             strncpy_s(evt.origin_tag, "ThreatIntel", 31);
             SendEventDirect(evt);
         }
+        else {
+            // Pack and send standard real-time network connection event to Python
+            BinaryEvent evt = {};
+            evt.event_type = EVT_NETWORK_CONNECT;
+            evt.timestamp = GetCurrentTimestamp();
+            evt.pid = pid;
+            evt.threat_level = 0;
+
+            ProcessInfo* proc = g_graph->GetProcess(pid);
+            if (proc) {
+                evt.ppid = proc->parent_uid.pid;
+                evt.is_signed = proc->is_signed;
+                strncpy_s(evt.name, WideToUtf8(proc->name).c_str(), 255);
+                strncpy_s(evt.full_path, WideToUtf8(proc->full_path).c_str(), 511);
+                strncpy_s(evt.origin_tag, proc->origin_tag.c_str(), 31);
+            } else {
+                evt.ppid = 0;
+                evt.is_signed = 0;
+                strncpy_s(evt.name, "Unknown", 255);
+            }
+
+            strncpy_s(evt.extra_data, dest_ip.c_str(), 255);
+            SendEventDirect(evt);
+        }
 
     }
     catch (...) {}
+}
+
+// ================================================================
+// HEARTBEAT SENSOR THREAD
+// ================================================================
+
+void HeartbeatThread() {
+    while (true) {
+        Sleep(5000); // 5-second pulse
+        if (g_pipe_data != INVALID_HANDLE_VALUE) {
+            BinaryEvent evt = {};
+            evt.event_type = 11; // EVT_HEARTBEAT
+            evt.timestamp = GetCurrentTimestamp();
+            evt.pid = 0;
+            strncpy_s(evt.name, "heartbeat", 255);
+            strncpy_s(evt.origin_tag, "Heartbeat", 31);
+            {
+                lock_guard<mutex> lock(g_queue_mutex);
+                g_event_queue.push(evt);
+            }
+        }
+    }
 }
 
 // ================================================================
@@ -1735,7 +1852,7 @@ int main() {
     wcout << endl;
 
     const wchar_t* mode_names[] = { L"PRODUCTION", L"SMART", L"LEARNING" };
-    wcout << L"[MODE] " << mode_names[MODE] << L" MODE" << endl;
+    wcout << L"[MODE] " << mode_names[g_mode] << L" MODE" << endl;
     wcout << endl;
 
     // Initialize global objects
@@ -1762,9 +1879,9 @@ int main() {
     sa.bInheritHandle = FALSE;
     PSECURITY_DESCRIPTOR pSD = nullptr;
     
-    // SDDL: D:(A;;GA;;;SY)(A;;GA;;;BA) -> Allow Generic All to SYSTEM (SY) and Built-in Administrators (BA)
+    // SDDL: D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU) -> Allow Generic All to SYSTEM (SY) and Built-in Administrators (BA), and read/write to Interactive logon User (IU)
     if (ConvertStringSecurityDescriptorToSecurityDescriptorW(
-        L"D:(A;;GA;;;SY)(A;;GA;;;BA)",
+        L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)",
         SDDL_REVISION_1,
         &pSD,
         nullptr)) 
@@ -1832,6 +1949,9 @@ int main() {
 
     thread event_processor(EventProcessorThread);
     event_processor.detach();
+
+    thread heartbeat(HeartbeatThread);
+    heartbeat.detach();
 
     wcout << L"[+] All threads started" << endl;
     wcout << endl;

@@ -64,6 +64,46 @@ WINTRUST_ACTION_GENERIC_VERIFY_V2 = GUID(
     (ctypes.c_byte * 8)(0x8c, 0xc2, 0x00, 0xc0, 0x4f, 0xc2, 0x95, 0xee)
 )
 
+IS_64BIT = struct.calcsize("P") == 8
+
+if IS_64BIT:
+    class MEMORY_BASIC_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("BaseAddress", ctypes.c_void_p),
+            ("AllocationBase", ctypes.c_void_p),
+            ("AllocationProtect", ctypes.c_ulong),
+            ("__alignment1", ctypes.c_ulong),
+            ("RegionSize", ctypes.c_size_t),
+            ("State", ctypes.c_ulong),
+            ("Protect", ctypes.c_ulong),
+            ("Type", ctypes.c_ulong),
+            ("__alignment2", ctypes.c_ulong),
+        ]
+else:
+    class MEMORY_BASIC_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("BaseAddress", ctypes.c_void_p),
+            ("AllocationBase", ctypes.c_void_p),
+            ("AllocationProtect", ctypes.c_ulong),
+            ("RegionSize", ctypes.c_size_t),
+            ("State", ctypes.c_ulong),
+            ("Protect", ctypes.c_ulong),
+            ("Type", ctypes.c_ulong),
+        ]
+
+# Pre-load kernel32 for memory scanning
+try:
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.VirtualQueryEx.argtypes = [
+        wintypes.HANDLE, 
+        wintypes.LPCVOID, 
+        ctypes.POINTER(MEMORY_BASIC_INFORMATION), 
+        ctypes.c_size_t
+    ]
+    kernel32.VirtualQueryEx.restype = ctypes.c_size_t
+except Exception:
+    kernel32 = None
+
 class MemoryScanner:
     """Trust-aware memory scanner that prevents false positives"""
     
@@ -130,6 +170,15 @@ class MemoryScanner:
         if self.scan_thread:
             self.scan_thread.join(timeout=5)
         print("[MEMORY] Scanner stopped")
+        
+    def scan_process(self, pid: int, name: str, exe_path: str):
+        """Trigger a targeted memory scan for a single process (typically on startup)"""
+        if self._should_skip_process(pid, name, exe_path):
+            return
+            
+        findings = self._scan_process_memory(pid, name, exe_path)
+        if findings:
+            self._handle_suspicious_memory(pid, name, exe_path, findings)
     
     def _scan_loop(self):
         """Main scanning loop"""
@@ -264,29 +313,46 @@ class MemoryScanner:
         return findings
     
     def _analyze_memory_regions(self, h_process, pid: int, name: str) -> List[Dict]:
-        """Analyze memory regions for suspicious patterns"""
+        """Analyze memory regions for suspicious patterns across 64-bit address space"""
         findings = []
         
         try:
             import win32process
             
-            # Get memory info
+            if not kernel32:
+                print(f"[MEMORY] Memory analysis error: kernel32 not loaded")
+                return findings
+                
+            # Get memory info across user space range
             address = 0
-            while address < 0x7FFFFFFF:  # User space limit
+            consecutive_failures = 0
+            while address < 0x7FFFFFFFFFFF:  # 64-bit Windows user space limit
                 try:
-                    mbi = win32process.VirtualQueryEx(h_process, address)
+                    mbi = MEMORY_BASIC_INFORMATION()
+                    # h_process parameter in python win32api OpenProcess is a PyHANDLE.
+                    # We can pass its integer value using int()
+                    res = kernel32.VirtualQueryEx(int(h_process), ctypes.c_void_p(address), ctypes.byref(mbi), ctypes.sizeof(mbi))
+                    consecutive_failures = 0
+                    
+                    if res == 0 or mbi.RegionSize <= 0:
+                        break
+                    
+                    base_address = mbi.BaseAddress or 0
                     
                     # Check for suspicious memory patterns
-                    if self._is_suspicious_memory(mbi, h_process, address):
-                        finding = self._analyze_memory_region(mbi, h_process, address, pid, name)
+                    if self._is_suspicious_memory(mbi, h_process, base_address):
+                        finding = self._analyze_memory_region(mbi, h_process, base_address, pid, name)
                         if finding:
                             findings.append(finding)
                     
                     # Move to next region
-                    address = mbi.BaseAddress + mbi.RegionSize
+                    address = base_address + mbi.RegionSize
                     
                 except Exception:
-                    address += 0x1000  # Skip 4KB and continue
+                    consecutive_failures += 1
+                    if consecutive_failures > 10:  # Prevent infinite loop in high unallocated addresses
+                        break
+                    address += 0x10000  # Skip 64KB (Windows allocation granularity) and continue
                     
         except Exception as e:
             print(f"[MEMORY] Memory analysis error for PID {pid}: {e}")
@@ -296,6 +362,10 @@ class MemoryScanner:
     def _is_suspicious_memory(self, mbi, h_process, address) -> bool:
         """Check if memory region is suspicious"""
         
+        # Only scan committed memory pages. Skip MEM_FREE and MEM_RESERVE completely.
+        if getattr(mbi, 'State', 0) != win32con.MEM_COMMIT:
+            return False
+            
         # Check for RWX (Read-Write-Execute) memory
         if (mbi.Protect & win32con.PAGE_EXECUTE_READWRITE) or \
            (mbi.Protect & win32con.PAGE_EXECUTE_WRITECOPY):

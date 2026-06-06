@@ -131,6 +131,25 @@ class EventDatabase:
             # Create indexes for graph_snapshots table
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON graph_snapshots(timestamp)')
             
+            # Table 6: AI Training Session Logs
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ai_training_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp INTEGER NOT NULL,
+                    samples_count INTEGER NOT NULL,
+                    features_count INTEGER NOT NULL,
+                    training_duration REAL NOT NULL,
+                    iso_forest_anomalies INTEGER DEFAULT 0,
+                    svm_anomalies INTEGER DEFAULT 0,
+                    status TEXT NOT NULL,
+                    model_metadata TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create index for ai_training_logs table
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_ai_training_timestamp ON ai_training_logs(timestamp)')
+            
             self.connection.commit()
             print(f"[DB] Database initialized: {self.db_path}")
     
@@ -247,6 +266,39 @@ class EventDatabase:
             ))
             self.connection.commit()
             return cursor.lastrowid
+    
+    def insert_ai_training_log(self, log_entry: Dict):
+        """Insert AI Training Session Log"""
+        with self.lock:
+            cursor = self.connection.cursor()
+            cursor.execute('''
+                INSERT INTO ai_training_logs (
+                    timestamp, samples_count, features_count, training_duration,
+                    iso_forest_anomalies, svm_anomalies, status, model_metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                log_entry.get('timestamp', int(time.time() * 1000)),
+                log_entry.get('samples_count', 0),
+                log_entry.get('features_count', 0),
+                log_entry.get('training_duration', 0.0),
+                log_entry.get('iso_forest_anomalies', 0),
+                log_entry.get('svm_anomalies', 0),
+                log_entry.get('status', 'unknown'),
+                json.dumps(log_entry.get('model_metadata', {}))
+            ))
+            self.connection.commit()
+            return cursor.lastrowid
+
+    def get_ai_training_logs(self, limit: int = 100) -> List[Dict]:
+        """Get recent AI training logs"""
+        with self.lock:
+            cursor = self.connection.cursor()
+            cursor.execute('''
+                SELECT * FROM ai_training_logs 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            ''', (limit,))
+            return [dict(row) for row in cursor.fetchall()]
     
     # ================================================================
     # QUERY METHODS
