@@ -20,9 +20,9 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
                     'color': '#f8fafc',
                     'text-outline-width': 2,
                     'text-outline-color': '#050814',
-                    'background-opacity': 0.9,
+                    'background-opacity': 0.95,
                     'transition-property': 'background-color, border-color, opacity',
-                    'transition-duration': '0.5s'
+                    'transition-duration': '0.3s'
                 }
             },
             
@@ -31,9 +31,9 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
                 selector: 'node[threat = 0]',
                 style: {
                     'background-color': '#10b981',
-                    'width': 30,
-                    'height': 30,
-                    'opacity': 0.7
+                    'width': 34,
+                    'height': 34,
+                    'opacity': 0.95
                 }
             },
             
@@ -42,10 +42,12 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
                 selector: 'node[threat = 1]',
                 style: {
                     'background-color': '#f59e0b',
-                    'width': 40,
-                    'height': 40,
-                    'opacity': 0.9,
-                    'shape': 'triangle'
+                    'width': 44,
+                    'height': 44,
+                    'opacity': 0.95,
+                    'shape': 'triangle',
+                    'border-width': 2,
+                    'border-color': '#d97706'
                 }
             },
             
@@ -54,12 +56,24 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
                 selector: 'node[threat = 2]',
                 style: {
                     'background-color': '#ef4444',
-                    'width': 50,
-                    'height': 50,
+                    'width': 54,
+                    'height': 54,
                     'opacity': 1,
                     'shape': 'hexagon',
                     'border-width': 3,
                     'border-color': '#b91c1c'
+                }
+            },
+            
+            // Exited processes (grey & faded)
+            {
+                selector: 'node[exited = "true"]',
+                style: {
+                    'background-color': '#475569',
+                    'opacity': 0.2,
+                    'color': '#94a3b8',
+                    'text-outline-color': '#050814',
+                    'border-width': 0
                 }
             },
             
@@ -73,36 +87,12 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
                 }
             },
             
-            // File nodes
-            {
-                selector: 'node[type = "file"]',
-                style: {
-                    'background-color': '#ffffff',
-                    'width': 20,
-                    'height': 20,
-                    'shape': 'square',
-                    'opacity': 0.6
-                }
-            },
-            
-            // Network nodes
-            {
-                selector: 'node[type = "network"]',
-                style: {
-                    'background-color': '#0ea5e9',
-                    'width': 20,
-                    'height': 20,
-                    'shape': 'diamond',
-                    'opacity': 0.6
-                }
-            },
-            
             // Selected node
             {
                 selector: 'node:selected',
                 style: {
                     'border-width': 5,
-                    'border-color': '#0ea5e9',
+                    'border-color': '#3b82f6',
                     'z-index': 999
                 }
             },
@@ -112,11 +102,13 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
                 selector: 'edge',
                 style: {
                     'width': 2,
-                    'line-color': '#334155',
-                    'target-arrow-color': '#334155',
+                    'line-color': '#475569',
+                    'target-arrow-color': '#475569',
                     'target-arrow-shape': 'triangle',
                     'curve-style': 'bezier',
-                    'opacity': 0.6
+                    'opacity': 0.5,
+                    'transition-property': 'opacity, line-color, target-arrow-color',
+                    'transition-duration': '0.3s'
                 }
             },
             
@@ -128,45 +120,26 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
                 }
             },
             
-            // File write
-            {
-                selector: 'edge[relation = "wrote"]',
-                style: {
-                    'line-color': '#ffffff',
-                    'line-style': 'dotted'
-                }
-            },
-            
-            // Network connection
-            {
-                selector: 'edge[relation = "connected"]',
-                style: {
-                    'line-color': '#0ea5e9',
-                    'line-style': 'dashed'
-                }
-            },
-            
-            // Faded elements
+            // Faded elements (highlighting fallback)
             {
                 selector: '.faded',
                 style: {
-                    'opacity': 0.15
+                    'opacity': 0.08
                 }
             }
         ],
         
         layout: {
-            name: 'cose',
+            name: 'fcose',
             animate: true,
             animationDuration: 1000,
-            nodeRepulsion: 12000,
-            idealEdgeLength: 120,
-            edgeElasticity: 100,
-            gravity: 0.1
+            nodeRepulsion: 6500,
+            idealEdgeLength: 100,
+            randomize: false
         },
         
         wheelSensitivity: 0.2,
-        minZoom: 0.3,
+        minZoom: 0.2,
         maxZoom: 3
     });
     
@@ -175,7 +148,12 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
         const node = evt.target;
         const nodeData = node.data();
         if (nodeData.type === 'process') {
-            onNodeSelected(nodeData.pid);
+            if (nodeData.isGroup && nodeData.pids) {
+                // Pass first PID and the whole group list of PIDs
+                onNodeSelected(nodeData.pids[0], nodeData.pids);
+            } else {
+                onNodeSelected(nodeData.pid, [nodeData.pid]);
+            }
         }
     });
     
@@ -184,6 +162,17 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
             onBackgroundTap();
         }
     });
+
+    // Hover highlighting (trace predecessor/successor path)
+    cy.on('mouseover', 'node', function(evt) {
+        const node = evt.target;
+        const path = node.predecessors().union(node.successors()).union(node);
+        cy.elements().difference(path).addClass('faded');
+    });
+
+    cy.on('mouseout', 'node', function(evt) {
+        cy.elements().removeClass('faded');
+    });
     
     return cy;
 }
@@ -191,52 +180,154 @@ export function initGraph(containerId, onNodeSelected, onBackgroundTap) {
 export function updateGraph(data, filterThreatsOnly) {
     if (!cy) return;
     
-    const now = Date.now();
-    const fadeTime = 600000; // 10 minutes
-    
-    let nodes = data.nodes;
+    // 1. Filter to processes only
+    let inputNodes = (data.nodes || []).filter(n => n.type === 'process');
     if (filterThreatsOnly) {
-        nodes = nodes.filter(n => n.threat > 0);
+        inputNodes = inputNodes.filter(n => n.threat > 0);
     }
     
-    nodes.forEach(nodeData => {
-        const age = now - nodeData.timestamp;
-        nodeData.opacity = Math.max(0.3, 1 - (age / fadeTime));
+    // Create mapping of unique node ID string to raw PID
+    const nodeIdToPid = {};
+    inputNodes.forEach(n => {
+        nodeIdToPid[n.id] = n.pid;
+    });
+    
+    // 2. Process Grouping Algorithm
+    const groups = {}; // label -> array of nodes
+    const finalNodes = [];
+    const pidToNodeIdMap = {}; // raw pid -> target node id in Cytoscape
+    
+    inputNodes.forEach(node => {
+        let emoji = node.is_signed ? '🛡️' : '⚙️';
+        if (node.exited) {
+            emoji = '💤';
+        }
+        node.labelWithEmoji = `${emoji} ${node.label}`;
+        
+        // Group only safe (threat == 0) and active (exited == false) processes
+        if (node.threat === 0 && !node.exited) {
+            if (!groups[node.label]) {
+                groups[node.label] = [];
+            }
+            groups[node.label].push(node);
+        } else {
+            // Keep separate and map directly
+            finalNodes.push(node);
+            pidToNodeIdMap[node.pid] = node.id;
+        }
+    });
+    
+    // Resolve grouped processes
+    Object.keys(groups).forEach(label => {
+        const gNodes = groups[label];
+        if (gNodes.length === 1) {
+            const singleNode = gNodes[0];
+            finalNodes.push(singleNode);
+            pidToNodeIdMap[singleNode.pid] = singleNode.id;
+        } else if (gNodes.length > 1) {
+            const groupNodeId = `group_${label.replace(/\./g, '_')}`;
+            const pids = gNodes.map(n => n.pid);
+            
+            finalNodes.push({
+                id: groupNodeId,
+                label: `📦 ${label} (${gNodes.length})`,
+                labelWithEmoji: `📦 ${label} (${gNodes.length})`,
+                pids: pids,
+                threat: 0,
+                trust: gNodes[0].trust,
+                type: 'process',
+                tags: [],
+                timestamp: Math.max(...gNodes.map(n => n.timestamp)),
+                is_signed: gNodes.every(n => n.is_signed),
+                ai_anomaly: false,
+                origin: gNodes[0].origin,
+                exited: false,
+                isGroup: true
+            });
+            
+            pids.forEach(pid => {
+                pidToNodeIdMap[pid] = groupNodeId;
+            });
+        }
+    });
+    
+    // Apply final labels
+    finalNodes.forEach(n => {
+        n.label = n.labelWithEmoji;
+    });
+    
+    // 3. Map edges to final node IDs (group node or individual node)
+    const finalEdges = [];
+    const edgeKeys = new Set();
+    
+    (data.edges || []).forEach(edge => {
+        const sourcePid = nodeIdToPid[edge.source];
+        const targetPid = nodeIdToPid[edge.target];
+        
+        if (sourcePid && targetPid) {
+            const finalSourceId = pidToNodeIdMap[sourcePid];
+            const finalTargetId = pidToNodeIdMap[targetPid];
+            
+            if (finalSourceId && finalTargetId && finalSourceId !== finalTargetId) {
+                const edgeKey = `${finalSourceId}-${finalTargetId}`;
+                if (!edgeKeys.has(edgeKey)) {
+                    edgeKeys.add(edgeKey);
+                    finalEdges.push({
+                        id: edgeKey,
+                        source: finalSourceId,
+                        target: finalTargetId,
+                        relation: edge.relation || 'spawned'
+                    });
+                }
+            }
+        }
     });
     
     let needsLayout = false;
+    const finalNodeIds = finalNodes.map(n => n.id);
     
-    // Add/update nodes efficiently
-    nodes.forEach(nodeData => {
+    // Remove old nodes from Cytoscape
+    cy.nodes().forEach(node => {
+        if (!finalNodeIds.includes(node.id())) {
+            node.remove();
+            needsLayout = true;
+        }
+    });
+    
+    // Add or update nodes
+    finalNodes.forEach(nodeData => {
         const existingNode = cy.getElementById(nodeData.id);
         if (existingNode.length > 0) {
             existingNode.data(nodeData);
-            existingNode.style('opacity', nodeData.opacity);
+            // Apply exited style dynamically if exited state changed
+            if (nodeData.exited) {
+                existingNode.style({
+                    'background-color': '#475569',
+                    'opacity': 0.2,
+                    'color': '#94a3b8'
+                });
+            }
         } else {
             cy.add({
                 group: 'nodes',
-                data: nodeData,
-                style: { opacity: nodeData.opacity }
+                data: nodeData
             });
             needsLayout = true;
         }
     });
     
-    // Handle edges
-    const currentEdgeIds = data.edges.map(e => `${e.source}-${e.target}`);
-    const existingEdges = cy.edges();
-    
-    existingEdges.forEach(edge => {
-        const edgeId = `${edge.data('source')}-${edge.data('target')}`;
-        if (!currentEdgeIds.includes(edgeId)) {
+    // Handle edges removal
+    const finalEdgeIds = finalEdges.map(e => e.id);
+    cy.edges().forEach(edge => {
+        if (!finalEdgeIds.includes(edge.id())) {
             edge.remove();
             needsLayout = true;
         }
     });
     
-    data.edges.forEach(edgeData => {
-        const edgeId = `${edgeData.source}-${edgeData.target}`;
-        if (cy.getElementById(edgeId).length === 0) {
+    // Add edges
+    finalEdges.forEach(edgeData => {
+        if (cy.getElementById(edgeData.id).length === 0) {
             cy.add({
                 group: 'edges',
                 data: edgeData
@@ -245,15 +336,15 @@ export function updateGraph(data, filterThreatsOnly) {
         }
     });
     
-    // Run layout on additions or removals
+    // Trigger layout run on change
     if (needsLayout) {
         cy.layout({
-            name: 'cose',
+            name: 'fcose',
             animate: true,
             animationDuration: 500,
             randomize: false,
-            nodeRepulsion: 12000,
-            idealEdgeLength: 120
+            nodeRepulsion: 6500,
+            idealEdgeLength: 100
         }).run();
     }
 }
@@ -270,8 +361,9 @@ export function filterNodes(query) {
     const matchedNodes = cy.nodes().filter(node => {
         const d = node.data();
         return String(d.pid).includes(query) || 
-               String(d.label).toLowerCase().includes(query) || 
-               (d.tags && d.tags.some(t => t.toLowerCase().includes(query)));
+               (d.pids && d.pids.some(p => String(p).includes(query))) ||
+               String(d.label).toLowerCase().includes(query.toLowerCase()) || 
+               (d.tags && d.tags.some(t => t.toLowerCase().includes(query.toLowerCase())));
     });
     
     matchedNodes.removeClass('faded');
@@ -291,7 +383,7 @@ export function changeLayout(layoutName) {
         name: layoutName,
         animate: true,
         animationDuration: 800,
-        nodeRepulsion: 8000,
+        nodeRepulsion: 6500,
         idealEdgeLength: 100
     }).run();
 }
@@ -309,7 +401,6 @@ export function renderLineageGraph(containerId, lineageData) {
     const container = document.getElementById(containerId);
     if (!container) return;
     
-    // Clean up previous lineage cy instance
     if (lineageCy) {
         lineageCy.destroy();
     }
@@ -319,14 +410,17 @@ export function renderLineageGraph(containerId, lineageData) {
     // Add ancestors
     const ancestors = lineageData.ancestors || [];
     ancestors.forEach(a => {
+        let emoji = a.is_signed ? '🛡️' : '⚙️';
+        if (a.exited) emoji = '💤';
         elements.push({
             group: 'nodes',
             data: {
                 id: a.id,
-                label: `${a.label} (${a.pid})`,
+                label: `${emoji} ${a.label} (${a.pid})`,
                 threat: a.threat,
                 type: 'process',
-                is_signed: a.is_signed
+                is_signed: a.is_signed,
+                exited: a.exited ? "true" : "false"
             }
         });
     });
@@ -334,14 +428,17 @@ export function renderLineageGraph(containerId, lineageData) {
     // Add descendants
     const descendants = lineageData.descendants || [];
     descendants.forEach(d => {
+        let emoji = d.is_signed ? '🛡️' : '⚙️';
+        if (d.exited) emoji = '💤';
         elements.push({
             group: 'nodes',
             data: {
                 id: d.id,
-                label: `${d.label} (${d.pid})`,
+                label: `${emoji} ${d.label} (${d.pid})`,
                 threat: d.threat,
                 type: 'process',
-                is_signed: d.is_signed
+                is_signed: d.is_signed,
+                exited: d.exited ? "true" : "false"
             }
         });
     });
@@ -349,14 +446,17 @@ export function renderLineageGraph(containerId, lineageData) {
     // Add target process itself
     const target = lineageData.process;
     if (target) {
+        let emoji = target.is_signed ? '🛡️' : '⚙️';
+        if (target.exited) emoji = '💤';
         elements.push({
             group: 'nodes',
             data: {
                 id: target.id,
-                label: `${target.label} (${target.pid})`,
+                label: `${emoji} ${target.label} (${target.pid})`,
                 threat: target.threat,
                 type: 'process',
-                is_signed: target.is_signed
+                is_signed: target.is_signed,
+                exited: target.exited ? "true" : "false"
             }
         });
     }
@@ -367,7 +467,6 @@ export function renderLineageGraph(containerId, lineageData) {
     
     allNodes.forEach(node => {
         if (node.ppid) {
-            // Find parent node ID if it's in allNodes
             const parent = allNodes.find(n => n.pid === node.ppid);
             if (parent && nodeIds.has(parent.id) && nodeIds.has(node.id)) {
                 elements.push({
@@ -397,23 +496,23 @@ export function renderLineageGraph(containerId, lineageData) {
                     'color': '#f8fafc',
                     'text-outline-width': 2,
                     'text-outline-color': '#050814',
-                    'background-opacity': 0.9
+                    'background-opacity': 0.95
                 }
             },
             {
                 selector: 'node[threat = 0]',
                 style: {
                     'background-color': '#10b981',
-                    'width': 30,
-                    'height': 30
+                    'width': 34,
+                    'height': 34
                 }
             },
             {
                 selector: 'node[threat = 1]',
                 style: {
                     'background-color': '#f59e0b',
-                    'width': 40,
-                    'height': 40,
+                    'width': 44,
+                    'height': 44,
                     'shape': 'triangle'
                 }
             },
@@ -421,11 +520,19 @@ export function renderLineageGraph(containerId, lineageData) {
                 selector: 'node[threat = 2]',
                 style: {
                     'background-color': '#ef4444',
-                    'width': 50,
-                    'height': 50,
+                    'width': 54,
+                    'height': 54,
                     'shape': 'hexagon',
                     'border-width': 3,
                     'border-color': '#b91c1c'
+                }
+            },
+            {
+                selector: 'node[exited = "true"]',
+                style: {
+                    'background-color': '#475569',
+                    'opacity': 0.25,
+                    'color': '#94a3b8'
                 }
             },
             {
@@ -435,7 +542,8 @@ export function renderLineageGraph(containerId, lineageData) {
                     'line-color': '#3b82f6',
                     'target-arrow-color': '#3b82f6',
                     'target-arrow-shape': 'triangle',
-                    'curve-style': 'bezier'
+                    'curve-style': 'bezier',
+                    'opacity': 0.6
                 }
             }
         ],
@@ -450,7 +558,6 @@ export function renderLineageGraph(containerId, lineageData) {
         wheelSensitivity: 0.2
     });
     
-    // Fit graph
     lineageCy.ready(() => {
         lineageCy.fit();
     });

@@ -11,6 +11,11 @@
     <!-- Cytoscape.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
     
+    <!-- Cytoscape layout extensions -->
+    <script src="https://unpkg.com/layout-base/layout-base.js"></script>
+    <script src="https://unpkg.com/cose-base/cose-base.js"></script>
+    <script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+    
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -279,9 +284,13 @@
     <!-- Detail Modal with Tabs -->
     <div id="detail-modal" class="modal hidden">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modal-title">Process Details</h2>
-                <button class="close-btn" onclick="closeModal()">×</button>
+            <div class="modal-header" style="display: flex; align-items: center; gap: 15px;">
+                <h2 id="modal-title" style="margin: 0;">Process Details</h2>
+                <div id="pid-selector-container" class="hidden" style="display: flex; align-items: center; gap: 5px;">
+                    <span style="font-size: 0.85rem; color: #a0aec0;">Instance PID:</span>
+                    <select id="modal-pid-select" onchange="window.selectInspectedInstancePID(this.value)" style="background: rgba(15, 23, 42, 0.6); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 2px 6px; outline: none; cursor: pointer; font-size: 0.85rem; font-family: inherit;"></select>
+                </div>
+                <button class="close-btn" onclick="closeModal()" style="margin-left: auto;">×</button>
             </div>
             
             <!-- Modal navigation tabs -->

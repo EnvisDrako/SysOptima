@@ -811,7 +811,8 @@ def serialize_nodes(G):
             'timestamp': node.get('timestamp'),
             'is_signed': node.get('is_signed', True),
             'ai_anomaly': node.get('ai_anomaly', False),
-            'origin': node.get('origin', 'Unknown')
+            'origin': node.get('origin', 'Unknown'),
+            'exited': node.get('exited', False)
         })
     return nodes
 

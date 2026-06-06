@@ -90,7 +90,7 @@
   },
   "ai": {
     "enabled": false,
-    "training_mode": false,
+    "training_mode": true,
     "training_samples_required": 1000,
     "anomaly_threshold": 0.7,
     "model_path": "sysoptima_models.pkl",

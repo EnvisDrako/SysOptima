@@ -289,8 +289,13 @@ class ThreatGraph:
     
     def remove_active_pid(self, pid: int):
         """Called when a process terminates, breaking active PID reuse linkage"""
+        import time
         with self.lock:
             if pid in self.active_pids:
+                node_id = self.active_pids[pid]
+                if self.G.has_node(node_id):
+                    self.G.nodes[node_id]['exited'] = True
+                    self.G.nodes[node_id]['exit_time'] = time.time()
                 del self.active_pids[pid]
                 
     def add_process(self, pid, ppid, name, origin, threat_level, timestamp, is_signed, full_path, **kwargs):
@@ -645,6 +650,7 @@ class ThreatGraph:
         """Rolling window graph pruning (prevents memory leak, retains active/suspicious context)"""
         with self.lock:
             current_time = int(time.time() * 1000)
+            now_sec = time.time()
             threshold = 600000  # 10 minutes (600,000 ms) for normal nodes
             threat_threshold = 3600000  # 1 hour (3,600,000 ms) for threat nodes
             
@@ -653,6 +659,14 @@ class ThreatGraph:
             to_remove = []
             for n in self.G.nodes():
                 node_data = self.G.nodes[n]
+                
+                # If node has exited, prune it 120s after exit
+                if node_data.get('exited', False):
+                    exit_age = now_sec - node_data.get('exit_time', 0)
+                    if exit_age > 120:
+                        to_remove.append(n)
+                    continue
+                
                 age = current_time - node_data.get('timestamp', 0)
                 
                 if node_data.get('threat', 0) >= 1:

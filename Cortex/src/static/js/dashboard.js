@@ -17,9 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Init Graph
     graph.initGraph('graph-container', 
-        (pid) => {
+        (pid, allPids) => {
             selectedNodePid = pid;
-            window.showProcessDetails(pid);
+            window.showProcessDetails(pid, allPids);
         },
         () => {
             selectedNodePid = null;
@@ -250,12 +250,11 @@ window.loadDetonationGrid = async function() {
 // MODAL & GLOBAL ACTIONS
 // ============================================================================
 
-window.showProcessDetails = async function(pid) {
+async function loadInspectedInstanceDetails(pid) {
     const data = await api.fetchProcessDetails(pid);
     if (data.error) return alert('Process not found');
     
     selectedNodePid = pid;
-    window.switchModalTab('overview');
     
     document.getElementById('modal-title').textContent = data.name;
     document.getElementById('detail-pid').textContent = pid;
@@ -298,7 +297,40 @@ window.showProcessDetails = async function(pid) {
         el.textContent = `${new Date(ev.timestamp).toLocaleTimeString()} - ${ev.description}`;
         tlContainer.appendChild(el);
     });
+
+    const activeTabBtn = document.querySelector('.modal-tab-btn.active');
+    if (activeTabBtn && activeTabBtn.id === 'modal-tab-btn-lineage') {
+        window.loadLineageTree(pid);
+    }
+}
+
+window.selectInspectedInstancePID = function(pidStr) {
+    const p = parseInt(pidStr, 10);
+    loadInspectedInstanceDetails(p);
+};
+
+window.showProcessDetails = async function(pid, allPids) {
+    selectedNodePid = pid;
+    window.switchModalTab('overview');
     
+    const pidSelector = document.getElementById('pid-selector-container');
+    const selectEl = document.getElementById('modal-pid-select');
+    
+    if (allPids && allPids.length > 1) {
+        pidSelector.classList.remove('hidden');
+        selectEl.innerHTML = '';
+        allPids.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            if (p === pid) opt.selected = true;
+            selectEl.appendChild(opt);
+        });
+    } else {
+        pidSelector.classList.add('hidden');
+    }
+    
+    await loadInspectedInstanceDetails(pid);
     document.getElementById('detail-modal').classList.remove('hidden');
 };
 
