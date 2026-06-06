@@ -57,7 +57,12 @@
       "Apple Inc.": 50,
       "Adobe Inc.": 40,
       "Mozilla Corporation": 40,
-      "NVIDIA Corporation": 40
+      "NVIDIA Corporation": 40,
+      "ASUSTeK Computer Inc.": 40,
+      "Intel Corporation": 45,
+      "Advanced Micro Devices, Inc.": 45,
+      "Realtek Semiconductor Corp.": 40,
+      "Git for Windows": 40
     },
     "trusted_paths": [
       "C:\\Windows\\System32\\",
