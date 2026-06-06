@@ -1846,9 +1846,9 @@ int main() {
     wcout << L"[*] Running pre-flight workspace cleanup..." << endl;
     // 1. Terminate other running instances of ourselves
     KillOtherInstances();
-    // 2. Quietly clean up any orphaned Python Cortex backends
-    system("powershell -Command \"Get-Process python -ErrorAction SilentlyContinue | ForEach-Object { $cmd = (Get-CimInstance Win32_Process -Filter \\\"ProcessId = $_.Id\\\" -ErrorAction SilentlyContinue).CommandLine; if ($cmd -and $cmd.Contains(\\\"main.py\\\")) { Stop-Process -Id $_.Id -Force } }\" >nul 2>&1");
-    wcout << L"    [✓] Leaked background tasks cleaned successfully." << endl;
+    // 2. Python cleanup is now handled by start_sysoptima.ps1 bootstrapper
+    // to prevent WMI deadlocks inside the C++ sensor.
+    wcout << L"    [+] Sensor workspace prepared." << endl;
     wcout << endl;
 
     const wchar_t* mode_names[] = { L"PRODUCTION", L"SMART", L"LEARNING" };

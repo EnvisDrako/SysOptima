@@ -18,6 +18,11 @@
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="/static/css/dashboard.css">
+    
+    <!-- Token Injection -->
+    <script>
+        window.SYSOPTIMA_TOKEN = "{{ api_token }}";
+    </script>
 </head>
 <body class="dark-theme">
     
@@ -286,6 +291,7 @@
                 <button class="modal-tab-btn" id="modal-tab-btn-network" onclick="switchModalTab('network')">🌐 Connections (<span id="modal-badge-network">0</span>)</button>
                 <button class="modal-tab-btn" id="modal-tab-btn-registry" onclick="switchModalTab('registry')">🔑 Registry (<span id="modal-badge-registry">0</span>)</button>
                 <button class="modal-tab-btn" id="modal-tab-btn-timeline" onclick="switchModalTab('timeline')">⏱️ Event Timeline</button>
+                <button class="modal-tab-btn" id="modal-tab-btn-lineage" onclick="switchModalTab('lineage')">🌲 Lineage Tree</button>
             </div>
             
             <div class="modal-body">
@@ -345,6 +351,14 @@
                     <div class="detail-section">
                         <h3>⏱️ Chronological Process Timeline</h3>
                         <div id="detail-timeline" class="timeline-container"></div>
+                    </div>
+                </div>
+                
+                <!-- Modal Tab 6: Lineage Tree -->
+                <div id="modal-content-lineage" class="modal-tab-content-pane">
+                    <div class="detail-section">
+                        <h3>🌲 Process Parent-Child Lineage</h3>
+                        <div id="lineage-graph-container" style="height: 380px; border: 1px solid rgba(255,255,255,0.08); background-color: #050814; border-radius: 8px; margin-top: 1rem; position: relative;"></div>
                     </div>
                 </div>
                 

@@ -8,7 +8,11 @@ let lastUpdate = 0;
 let updateCount = 0;
 
 export function initSocket(onConnect, onDisconnect, onGraphUpdate, onPendingReviewsUpdate) {
-    socket = io.connect(window.location.origin);
+    socket = io.connect(window.location.origin, {
+        auth: {
+            token: window.SYSOPTIMA_TOKEN || ''
+        }
+    });
     
     socket.on('connect', () => {
         console.log('[WebSocket] Connected');

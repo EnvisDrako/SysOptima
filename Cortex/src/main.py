@@ -29,6 +29,7 @@ from config_manager import ConfigManager
 from memory_scanner import MemoryScanner
 from quarantine_manager import QuarantineManager
 from malware_launcher import MalwareLauncher
+from protocol import pack_command
 
 # AI/ML imports
 try:

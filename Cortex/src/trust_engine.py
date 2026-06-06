@@ -29,7 +29,10 @@ class TrustEngine:
             'iexplore.exe', 'safari.exe',
             'code.exe',  # VSCode
             'electron.exe',  # Electron apps
-            'discord.exe', 'slack.exe', 'teams.exe'  # Common apps
+            'discord.exe', 'slack.exe', 'teams.exe',  # Common apps
+            'antigravity.exe', 'git.exe', 'git-remote-https.exe',
+            'node.exe', 'npm.exe', 'msbuild.exe', 'explorer.exe',
+            'taskmgr.exe', 'asus_framework.exe'
         }
 
     def load_from_config_manager(self):
@@ -79,7 +82,12 @@ class TrustEngine:
                 "Apple Inc.": 50,
                 "Adobe Inc.": 40,
                 "Mozilla Corporation": 40,
-                "NVIDIA Corporation": 40
+                "NVIDIA Corporation": 40,
+                "ASUSTeK Computer Inc.": 40,
+                "Intel Corporation": 45,
+                "Advanced Micro Devices, Inc.": 45,
+                "Realtek Semiconductor Corp.": 40,
+                "Git for Windows": 40
             },
             "trusted_paths": [
                 "C:\\Windows\\System32\\",

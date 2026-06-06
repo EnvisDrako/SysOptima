@@ -55,7 +55,29 @@ def check_authentication():
 @app.route('/')
 def index():
     """Main dashboard page"""
-    return render_template('index.html')
+    expected_token = "SysOptimaHardenedToken2026"
+    if config:
+        expected_token = config.get('api.token', expected_token)
+    return render_template('index.html', api_token=expected_token)
+
+@app.route('/api/processes')
+def get_processes():
+    """Get all monitored processes in a flat list"""
+    if not threat_graph:
+        return jsonify([])
+    return jsonify(threat_graph.get_all_processes())
+
+@app.route('/api/process/<int:pid>/lineage')
+def get_process_lineage(pid):
+    """Get process parent-child lineage tree"""
+    if not threat_graph:
+        return jsonify({'error': 'Graph not initialized'}), 500
+        
+    lineage = threat_graph.get_process_lineage(pid)
+    if not lineage or not lineage.get('process'):
+        return jsonify({'error': 'Process lineage not found'}), 404
+        
+    return jsonify(lineage)
 
 @app.route('/api/health')
 def get_health():
@@ -741,9 +763,21 @@ def manage_config():
 # ============================================================================
 
 @socketio.on('connect')
-def handle_connect():
-    """Client connected"""
-    print('[WEBSOCKET] Client connected')
+def handle_connect(auth=None):
+    """Client connected with Bearer token authentication"""
+    expected_token = "SysOptimaHardenedToken2026"
+    if config:
+        expected_token = config.get('api.token', expected_token)
+        
+    token = None
+    if auth and isinstance(auth, dict) and 'token' in auth:
+        token = auth['token']
+        
+    if not token or token != expected_token:
+        print('[WEBSOCKET] Connection rejected: Invalid or missing token')
+        return False  # Refuses connection
+        
+    print('[WEBSOCKET] Client connected successfully')
     emit('connected', {'message': 'Connected to SysOptima'})
 
 @socketio.on('disconnect')
@@ -839,15 +873,14 @@ def push_updates_thread():
                 nodes_data.sort(key=lambda n: n.get('threat', 0), reverse=True)
                 nodes_data = nodes_data[:node_limit]
             
-            # [PASS] Only send if not empty
-            if len(nodes_data) > 0:
-                socketio.emit('graph_update', {
-                    'nodes': nodes_data,
-                    'edges': serialize_edges(G),
-                    'stats': stats,
-                    'timestamp': now,
-                    'limited': len(nodes_data) >= node_limit  # [PASS] Tell frontend it's limited
-                })
+            # Always send updates to keep the frontend updated on stats and status
+            socketio.emit('graph_update', {
+                'nodes': nodes_data,
+                'edges': serialize_edges(G),
+                'stats': stats,
+                'timestamp': now,
+                'limited': len(nodes_data) >= node_limit
+            })
         
         except Exception as e:
             print(f"[WEBSOCKET] Error: {e}")

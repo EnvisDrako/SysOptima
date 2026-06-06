@@ -326,8 +326,12 @@ class MemoryScanner:
             # Get memory info across user space range
             address = 0
             consecutive_failures = 0
-            while address < 0x7FFFFFFFFFFF:  # 64-bit Windows user space limit
+            regions_scanned = 0
+            max_regions = 5000
+            
+            while address < 0x7FFFFFFFFFFF and regions_scanned < max_regions:
                 try:
+                    regions_scanned += 1
                     mbi = MEMORY_BASIC_INFORMATION()
                     # h_process parameter in python win32api OpenProcess is a PyHANDLE.
                     # We can pass its integer value using int()
@@ -345,10 +349,14 @@ class MemoryScanner:
                         if finding:
                             findings.append(finding)
                     
-                    # Move to next region
-                    address = base_address + mbi.RegionSize
+                    # Move to next region, ensuring address strictly increases
+                    next_address = base_address + mbi.RegionSize
+                    if next_address <= address:
+                        next_address = address + 0x1000  # Force progress by at least 4KB page size
+                    address = next_address
                     
                 except Exception:
+                    regions_scanned += 1
                     consecutive_failures += 1
                     if consecutive_failures > 10:  # Prevent infinite loop in high unallocated addresses
                         break
