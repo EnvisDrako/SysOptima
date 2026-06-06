@@ -43,6 +43,7 @@ def test_memory_scanner():
         print(f"\n[FIND] Force scanning current process (PID {current_pid})")
         findings = scanner.force_scan_process(current_pid)
         print(f"   Findings: {len(findings)}")
+        assert isinstance(findings, list), "force_scan_process did not return a list"
         
         # Start background scanning for 5 seconds
         print(f"\n[START] Starting background scanning for 5 seconds...")
@@ -56,6 +57,9 @@ def test_memory_scanner():
         print(f"   Processes skipped (trust): {final_stats['processes_skipped_trust']}")
         print(f"   Processes skipped (JIT): {final_stats['processes_skipped_jit']}")
         
+        if final_stats['scans_performed'] == 0:
+            print("[WARN] Background scanning thread did not complete a full cycle in 5 seconds.")
+            
         return True
         
     except Exception as e:
